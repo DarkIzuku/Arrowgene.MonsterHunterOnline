@@ -86,6 +86,71 @@ static bool IsExecutableOffset(HMODULE module, uintptr_t offset)
     return false;
 }
 
+static bool InstallDebugShim(HMODULE module)
+{
+#if defined(_M_IX86)
+    // The original Tencent/React IFS tool always installs a tiny stand-in for
+    // ifsdebug.dll before opening archives. IFS2.dll can dereference this
+    // interface during archive open, so leaving it null may cause 0xC0000005.
+    constexpr uintptr_t DebugInterfaceOffset = 0x8CBE0;
+
+    auto base = reinterpret_cast<uint8_t*>(module);
+    auto slot = reinterpret_cast<DWORD*>(base + DebugInterfaceOffset);
+
+    MEMORY_BASIC_INFORMATION mbi{};
+    if (VirtualQuery(slot, &mbi, sizeof(mbi)) != sizeof(mbi) || mbi.State != MEM_COMMIT)
+    {
+        std::cerr << "[IFS2] Debug shim slot is not mapped.\n";
+        return false;
+    }
+
+    static DWORD debugFunction = reinterpret_cast<DWORD>(&OutputDebugStringA);
+    static DWORD debugFunctionPtr = reinterpret_cast<DWORD>(&debugFunction);
+
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(slot, sizeof(DWORD), PAGE_READWRITE, &oldProtect))
+    {
+        std::cerr << "[IFS2] VirtualProtect failed for debug shim slot. Win32="
+                  << GetLastError() << "\n";
+        return false;
+    }
+
+    *slot = reinterpret_cast<DWORD>(&debugFunctionPtr);
+
+    DWORD ignored = 0;
+    VirtualProtect(slot, sizeof(DWORD), oldProtect, &ignored);
+
+    std::cout << "[IFS2] Installed ifsdebug compatibility shim at RVA 0x"
+              << std::hex << DebugInterfaceOffset << std::dec << "\n";
+    return true;
+#else
+    return false;
+#endif
+}
+
+static HANDLE OpenArchiveSafe(const std::string& archivePath)
+{
+#if defined(_MSC_VER) && defined(_M_IX86)
+    HANDLE result = nullptr;
+    __try
+    {
+        std::cout << "[IFS2] Calling SFileOpenArchive_w...\n";
+        result = gOpenArchive(archivePath.c_str(), 0);
+        std::cout << "[IFS2] SFileOpenArchive_w returned " << result << "\n";
+    }
+    __except(EXCEPTION_EXECUTE_HANDLER)
+    {
+        DWORD code = GetExceptionCode();
+        std::cerr << "[IFS2] SFileOpenArchive_w raised SEH exception 0x"
+                  << std::hex << code << std::dec << "\n";
+        return nullptr;
+    }
+    return result;
+#else
+    return gOpenArchive(archivePath.c_str(), 0);
+#endif
+}
+
 static void PrintPeDiagnostics(HMODULE module)
 {
     auto base = reinterpret_cast<const uint8_t*>(module);
@@ -382,6 +447,13 @@ int wmain(int argc, wchar_t** argv)
 
     PrintPeDiagnostics(dll);
 
+    if (!InstallDebugShim(dll))
+    {
+        std::cerr << "[ERROR] Failed to install the IFS2 debug compatibility shim.\n";
+        FreeLibrary(dll);
+        return 6;
+    }
+
     if (!ResolveFunctions(dll, offsets))
     {
         std::cerr << "[ERROR] Failed to resolve the IFS2 interface.\n";
@@ -390,7 +462,7 @@ int wmain(int argc, wchar_t** argv)
     }
 
     std::string archiveUtf8 = WideToUtf8(archivePath.wstring());
-    HANDLE archive = gOpenArchive(archiveUtf8.c_str(), 0);
+    HANDLE archive = OpenArchiveSafe(archiveUtf8);
     if (!archive)
     {
         std::cerr << "[ERROR] IFS2.dll failed to open the archive.\n";
