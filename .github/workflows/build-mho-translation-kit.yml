@@ -1,0 +1,68 @@
+name: Build MHO Translation Kit
+
+on:
+  push:
+    branches:
+      - feature/mho-translation-tooling
+    paths:
+      - "Tools/MHOTranslator/**"
+      - "Tools/MHOIFSExtractor/**"
+      - "Tools/MHOTranslationKit/**"
+      - ".github/workflows/build-mho-translation-kit.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "Tools/MHOTranslator/**"
+      - "Tools/MHOIFSExtractor/**"
+      - "Tools/MHOTranslationKit/**"
+      - ".github/workflows/build-mho-translation-kit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-kit:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build MHOTranslator
+        run: dotnet publish Tools/MHOTranslator/MHOTranslator.csproj -c Release -r win-x64 --self-contained true -o artifacts/translator
+
+      - name: Configure Win32 extractor
+        run: cmake -S Tools/MHOIFSExtractor -B build/MHOIFSExtractor -A Win32
+
+      - name: Build Win32 extractor
+        run: cmake --build build/MHOIFSExtractor --config Release --parallel
+
+      - name: Assemble kit
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/MHOTranslationKit | Out-Null
+          Copy-Item artifacts/translator/* artifacts/MHOTranslationKit/ -Recurse
+          Copy-Item build/MHOIFSExtractor/Release/MHOIFSExtractor.exe artifacts/MHOTranslationKit/
+          Copy-Item Tools/MHOTranslationKit/ExtractAndScan.ps1 artifacts/MHOTranslationKit/
+          Copy-Item Tools/MHOTranslationKit/README.md artifacts/MHOTranslationKit/
+          Copy-Item Tools/MHOIFSExtractor/README.md artifacts/MHOTranslationKit/IFS-EXTRACTOR-README.md
+          @"
+          Monster Hunter Online Translation Kit
+
+          IFS2.dll and game assets are intentionally NOT included.
+          Use the files from your own MHO client.
+          "@ | Set-Content artifacts/MHOTranslationKit/READ-ME-FIRST.txt
+
+      - name: Upload kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: MHO-Translation-Kit-Windows
+          path: artifacts/MHOTranslationKit
+          if-no-files-found: error
