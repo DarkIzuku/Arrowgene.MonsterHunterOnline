@@ -61,18 +61,56 @@ static uintptr_t ParseHex(const std::wstring& value)
     return static_cast<uintptr_t>(std::stoull(s, nullptr, 16));
 }
 
-static bool IsReadableAddress(HMODULE module, uintptr_t offset)
+static bool IsExecutableOffset(HMODULE module, uintptr_t offset)
 {
-    MEMORY_BASIC_INFORMATION mbi{};
-    auto address = reinterpret_cast<const void*>(reinterpret_cast<uintptr_t>(module) + offset);
-    if (VirtualQuery(address, &mbi, sizeof(mbi)) != sizeof(mbi))
+    auto base = reinterpret_cast<const uint8_t*>(module);
+    auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    if (!dos || dos->e_magic != IMAGE_DOS_SIGNATURE)
         return false;
 
-    if (mbi.State != MEM_COMMIT)
+    auto nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE)
         return false;
 
-    DWORD protect = mbi.Protect & 0xFF;
-    return protect != PAGE_NOACCESS && protect != PAGE_GUARD;
+    const IMAGE_SECTION_HEADER* section = IMAGE_FIRST_SECTION(nt);
+    for (unsigned i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section)
+    {
+        uintptr_t start = section->VirtualAddress;
+        uintptr_t size = std::max<uintptr_t>(section->Misc.VirtualSize, section->SizeOfRawData);
+        uintptr_t end = start + size;
+
+        if (offset >= start && offset < end)
+            return (section->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0;
+    }
+
+    return false;
+}
+
+static void PrintPeDiagnostics(HMODULE module)
+{
+    auto base = reinterpret_cast<const uint8_t*>(module);
+    auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    if (!dos || dos->e_magic != IMAGE_DOS_SIGNATURE)
+    {
+        std::cout << "[IFS2] PE diagnostics unavailable.\n";
+        return;
+    }
+
+    auto nt = reinterpret_cast<const IMAGE_NT_HEADERS32*>(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE)
+    {
+        std::cout << "[IFS2] Invalid PE signature.\n";
+        return;
+    }
+
+    std::cout << "[IFS2] Machine=0x" << std::hex << nt->FileHeader.Machine
+              << " TimeDateStamp=0x" << nt->FileHeader.TimeDateStamp
+              << " SizeOfImage=0x" << nt->OptionalHeader.SizeOfImage
+              << " EntryPointRVA=0x" << nt->OptionalHeader.AddressOfEntryPoint
+              << std::dec << "\n";
+
+    if (nt->FileHeader.Machine != IMAGE_FILE_MACHINE_I386)
+        std::cout << "[WARN] IFS2.dll is not an x86/I386 PE image.\n";
 }
 
 static bool ResolveFunctions(HMODULE dll, const Offsets& offsets)
@@ -88,10 +126,11 @@ static bool ResolveFunctions(HMODULE dll, const Offsets& offsets)
             return byName;
         }
 
-        if (!IsReadableAddress(dll, offset))
+        if (!IsExecutableOffset(dll, offset))
         {
-            std::cerr << "[IFS2] Offset 0x" << std::hex << offset << std::dec
-                      << " is not mapped in this DLL.\n";
+            std::cerr << "[IFS2] Refusing compatibility offset 0x"
+                      << std::hex << offset << std::dec
+                      << " because it is not inside an executable PE section.\n";
             return nullptr;
         }
 
@@ -332,6 +371,7 @@ int wmain(int argc, wchar_t** argv)
     std::wcout << L"[INFO] Archive: " << archivePath << L"\n";
     std::wcout << L"[INFO] IFS2.dll: " << ifs2Path << L"\n";
 
+    SetDllDirectoryW(ifs2Path.parent_path().c_str());
     HMODULE dll = LoadLibraryW(ifs2Path.c_str());
     if (!dll)
     {
@@ -339,6 +379,8 @@ int wmain(int argc, wchar_t** argv)
                    << GetLastError() << L". Make sure this is the game's 32-bit DLL.\n";
         return 5;
     }
+
+    PrintPeDiagnostics(dll);
 
     if (!ResolveFunctions(dll, offsets))
     {
