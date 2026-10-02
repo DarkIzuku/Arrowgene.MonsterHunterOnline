@@ -1,26 +1,63 @@
-# This workflow will build a .NET project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-net
-
-name: .NET
+# Baseline CI for DarkIzuku MHO revival
+name: MHO Windows Build
 
 on:
   push:
-    branches: [ "master" ]
+    branches:
+      - master
+      - feature/mho-revival-baseline
   pull_request:
-    branches: [ "master" ]
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  build:
-
-    runs-on: ubuntu-latest
+  build-windows:
+    runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v3
-      with:
-        dotnet-version: 7.0.x
-    - name: Restore dependencies
-      run: dotnet restore
-    - name: Build
-      run: dotnet build --no-restore
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Show SDK
+        run: dotnet --info
+
+      - name: Restore
+        run: dotnet restore Arrowgene.MonsterHunterOnline.sln
+
+      - name: Build solution
+        run: dotnet build Arrowgene.MonsterHunterOnline.sln -c Release --no-restore
+
+      - name: Run tests
+        continue-on-error: true
+        run: dotnet test Arrowgene.MonsterHunterOnline.Test/Arrowgene.MonsterHunterOnline.Test.csproj -c Release --no-build --verbosity normal
+
+      - name: Publish server CLI
+        run: dotnet publish Arrowgene.MonsterHunterOnline.Cli/Arrowgene.MonsterHunterOnline.Cli.csproj -c Release -r win-x64 --self-contained true -o artifacts/server-cli
+
+      - name: Upload server CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: MHO-Server-CLI-win-x64
+          path: artifacts/server-cli
+          if-no-files-found: error
+
+      - name: Publish UI
+        continue-on-error: true
+        run: dotnet publish Arrowgene.MonsterHunterOnline.UI/Arrowgene.MonsterHunterOnline.UI.csproj -c Release -r win-x64 --self-contained false -o artifacts/ui
+
+      - name: Upload UI
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MHO-UI-win-x64
+          path: artifacts/ui
+          if-no-files-found: warn
