@@ -49,3 +49,24 @@ After extraction:
 
 That gives us a translation catalog with actual source paths instead of raw
 archive offsets.
+
+
+## Verified MHO IFS2.dll profile
+
+The current defaults were recovered directly from the user's MHO client:
+
+- SHA-256: `69d1a8fa9df64149779c42fa19d7194f1917ba968e91efe4af2d535e21663d25`
+- PE TimeDateStamp: `0x533A60DB`
+- SizeOfImage: `0x95000`
+
+Verified wrapper RVAs:
+
+- `SFileOpenArchive_w`: `0x16370`
+- `SFileExtractFile_w`: `0x25940`
+- `SFileCloseFile`: `0x20FB0`
+- `SFileReadFile`: `0x220C0`
+- `NIFSOpenFileEx`: `0x1FA20`
+
+The older public IFS Tool offsets do not match this DLL exactly; notably the
+old open-archive offset lands inside another function and crashes with
+`0xC0000005`.
