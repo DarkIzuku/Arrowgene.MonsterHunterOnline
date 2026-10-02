@@ -1,0 +1,51 @@
+name: Build MHO IFS Extractor
+
+on:
+  push:
+    branches:
+      - feature/mho-translation-tooling
+    paths:
+      - "Tools/MHOIFSExtractor/**"
+      - ".github/workflows/build-mho-ifs-extractor.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "Tools/MHOIFSExtractor/**"
+      - ".github/workflows/build-mho-ifs-extractor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-win32:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Win32
+        run: cmake -S Tools/MHOIFSExtractor -B build/MHOIFSExtractor -A Win32
+
+      - name: Build Release
+        run: cmake --build build/MHOIFSExtractor --config Release --parallel
+
+      - name: Stage artifact
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/MHOIFSExtractor | Out-Null
+          Copy-Item build/MHOIFSExtractor/Release/MHOIFSExtractor.exe artifacts/MHOIFSExtractor/
+          Copy-Item Tools/MHOIFSExtractor/README.md artifacts/MHOIFSExtractor/
+          @"
+          This build intentionally does not include IFS2.dll.
+          Use the 32-bit IFS2.dll from your own Monster Hunter Online client.
+          "@ | Set-Content artifacts/MHOIFSExtractor/READ-ME-FIRST.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MHOIFSExtractor-win32
+          path: artifacts/MHOIFSExtractor
+          if-no-files-found: error
