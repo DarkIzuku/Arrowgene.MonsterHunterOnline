@@ -398,10 +398,10 @@ static string Csv(string value)
 {
     if (value.Contains('"'))
     {
-        value = value.Replace(""", """");
+        value = value.Replace(new string('"', 1), new string('"', 2));
     }
 
-    return value.IndexOfAny([',', '"', '\r', '\n']) >= 0 ? $""{value}"" : value;
+    return value.IndexOfAny([',', '"', '\r', '\n']) >= 0 ? string.Concat('"', value, '"') : value;
 }
 
 readonly record struct ScanRow(string Path, int Line, string Encoding, string Source, string Translation);
