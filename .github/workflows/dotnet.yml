@@ -43,9 +43,6 @@ jobs:
       - name: Publish server CLI
         run: dotnet publish Arrowgene.MonsterHunterOnline.Cli/Arrowgene.MonsterHunterOnline.Cli.csproj -c Release -r win-x64 --self-contained true -o artifacts/server-cli
 
-      - name: Publish UI
-        run: dotnet publish Arrowgene.MonsterHunterOnline.UI/Arrowgene.MonsterHunterOnline.UI.csproj -c Release -r win-x64 --self-contained false -o artifacts/ui
-
       - name: Upload server CLI
         uses: actions/upload-artifact@v4
         with:
@@ -53,9 +50,14 @@ jobs:
           path: artifacts/server-cli
           if-no-files-found: error
 
+      - name: Publish UI
+        continue-on-error: true
+        run: dotnet publish Arrowgene.MonsterHunterOnline.UI/Arrowgene.MonsterHunterOnline.UI.csproj -c Release -r win-x64 --self-contained false -o artifacts/ui
+
       - name: Upload UI
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: MHO-UI-win-x64
           path: artifacts/ui
-          if-no-files-found: error
+          if-no-files-found: warn
