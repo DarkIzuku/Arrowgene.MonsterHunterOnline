@@ -7,6 +7,12 @@ on:
     paths:
       - "Tools/MHOTranslator/**"
       - ".github/workflows/build-mho-translator.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "Tools/MHOTranslator/**"
+      - ".github/workflows/build-mho-translator.yml"
   workflow_dispatch:
 
 permissions:
