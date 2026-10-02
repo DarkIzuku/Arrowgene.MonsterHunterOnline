@@ -12,11 +12,17 @@ namespace fs = std::filesystem;
 
 struct Offsets
 {
-    uintptr_t SFileOpenArchive = 0x163E0;
-    uintptr_t SFileExtractFile = 0x25DF0;
-    uintptr_t SFileCloseFile = 0x210A0;
-    uintptr_t SFileReadFile = 0x22570;
-    uintptr_t NIFSOpenFileEx = 0x1FED0;
+    // Profile recovered from the user's Monster Hunter Online IFS2.dll:
+    // SHA-256 69d1a8fa9df64149779c42fa19d7194f1917ba968e91efe4af2d535e21663d25
+    // PE TimeDateStamp 0x533A60DB, SizeOfImage 0x95000.
+    //
+    // These are wrapper entry points. The older public IFS Tool offsets land
+    // inside different functions for this binary and cause 0xC0000005.
+    uintptr_t SFileOpenArchive = 0x16370;
+    uintptr_t SFileExtractFile = 0x25940;
+    uintptr_t SFileCloseFile = 0x20FB0;
+    uintptr_t SFileReadFile = 0x220C0;
+    uintptr_t NIFSOpenFileEx = 0x1FA20;
 };
 
 using SFileOpenArchive_t = HANDLE(__stdcall*)(const char*, int);
@@ -363,8 +369,9 @@ Options:
   --read-offset <hex>         Compatibility override for SFileReadFile.
   --openfile-offset <hex>     Compatibility override for NIFSOpenFileEx.
 
-The built-in compatibility offsets come from the public Tencent IFS tooling
-interface and are used only if named exports are unavailable.
+The built-in compatibility offsets are the verified wrapper entry points for
+the MHO IFS2.dll profile identified by PE TimeDateStamp 0x533A60DB and
+SizeOfImage 0x95000. Command-line overrides remain available for other builds.
 
 Examples:
   MHOIFSExtractor.exe list eng_patch.ifs --ifs2 "D:\MHO\Bin\Client\Bin32\IFS2.dll"
