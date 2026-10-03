@@ -24,6 +24,11 @@ internal static class TranslationPatch
             GetOption(args, "--out") ??
             Path.Combine(Environment.CurrentDirectory, "mho-es-patched"));
         bool onlySwf = args.Any(x => x.Equals("--only-swf", StringComparison.OrdinalIgnoreCase));
+        string? onlyPath = GetOption(args, "--only-path");
+        if (!string.IsNullOrWhiteSpace(onlyPath))
+        {
+            onlyPath = onlyPath.Replace('\\', '/').TrimStart('/');
+        }
 
         if (!Directory.Exists(inputRoot))
         {
@@ -53,6 +58,10 @@ internal static class TranslationPatch
         Console.WriteLine($"Translations: {translations.Count}");
         Console.WriteLine($"Output:       {outputRoot}");
         Console.WriteLine($"Mode:         {(onlySwf ? "SWF/UI only" : "all supported resources")}");
+        if (!string.IsNullOrWhiteSpace(onlyPath))
+        {
+            Console.WriteLine($"Only path:    {onlyPath}");
+        }
 
         Directory.CreateDirectory(outputRoot);
 
@@ -70,6 +79,12 @@ internal static class TranslationPatch
             string extension = Path.GetExtension(file).ToLowerInvariant();
 
             if (onlySwf && extension != ".swf")
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(onlyPath) &&
+                !relative.Equals(onlyPath, StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
