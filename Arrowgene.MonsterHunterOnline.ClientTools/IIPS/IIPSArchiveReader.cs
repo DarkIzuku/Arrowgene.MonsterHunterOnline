@@ -18,6 +18,7 @@ internal static class IIPSArchiveReader
         {
             IIPSArchiveHeaderData header = ReadHeader(stream, reader, options.VerifyChecksums, archive.ArchiveLogger);
 
+            byte[] originalHetSection = ReadBytesAt(stream, reader, (long)header.HetOffset, (int)header.HetLength);
             stream.Position = (long)header.HetOffset;
             uint hetMagic = reader.ReadUInt32();
             uint hetVersion = reader.ReadUInt32();
@@ -32,7 +33,7 @@ internal static class IIPSArchiveReader
             uint betDataLength = reader.ReadUInt32();
             byte[] betData = reader.ReadBytes((int)betDataLength);
             IIPSArchiveCrypto.IfsSectionDecrypt(betData);
-            List<IIPSArchiveEntryRecord> records = ParseBetEntries(betData, hetState, archive.ArchiveLogger);
+            List<IIPSArchiveEntryRecord> records = ParseBetEntries(betData, hetState, archive.ArchiveLogger, out uint[] originalBetHeader);
 
             IIPSArchiveMetadata metadata = new IIPSArchiveMetadata
             {
@@ -45,6 +46,8 @@ internal static class IIPSArchiveReader
                 RawChunkSize = header.RawChunkSize,
                 Md5PatchBaseTag = (byte[])header.Md5PatchBaseTag.Clone(),
                 Md5PatchedTag = (byte[])header.Md5PatchedTag.Clone(),
+                OriginalHetSection = originalHetSection,
+                OriginalBetHeader = originalBetHeader,
             };
 
             archive.ReplaceState(path, stream, reader, metadata, records, lookup);
@@ -177,7 +180,7 @@ internal static class IIPSArchiveReader
         return new IIPSArchiveLookup(totalCount, indexSize, indexSizeTotal, hashBitSize, nameHashes, fileIndexData);
     }
 
-    private static List<IIPSArchiveEntryRecord> ParseBetEntries(byte[] betData, HetState hetState, Arrowgene.Logging.ILogger logger)
+    private static List<IIPSArchiveEntryRecord> ParseBetEntries(byte[] betData, HetState hetState, Arrowgene.Logging.ILogger logger, out uint[] originalHeader)
     {
         if (betData.Length < 84)
         {
@@ -192,6 +195,7 @@ internal static class IIPSArchiveReader
         {
             header[i] = bet.ReadUInt32();
         }
+        originalHeader = (uint[])header.Clone();
 
         uint entryCount = header[1];
         uint tableEntrySize = header[2];
