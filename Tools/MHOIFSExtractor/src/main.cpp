@@ -197,6 +197,65 @@ static HANDLE OpenArchiveSafe(const std::string& archivePath)
 #endif
 }
 
+static bool InstallProtectedArchiveBypass(HMODULE module)
+{
+#if defined(_M_IX86)
+    // Verified only for:
+    // SHA-256 69d1a8fa9df64149779c42fa19d7194f1917ba968e91efe4af2d535e21663d25
+    //
+    // In this IFS2.dll, SFileOpenArchive parses the archive successfully, then
+    // calls RVA 0x25E40. That helper recomputes and compares the MD5 of the HET
+    // and BET tables. When BOTH hashes match, the caller assigns custom error
+    // 2000000008 and aborts the open. For extraction of the user's own patch,
+    // bypass only that policy gate while leaving all parsing and hash work intact.
+    constexpr uintptr_t GateRva = 0x17A52;
+    constexpr uintptr_t ConditionalJumpRva = 0x17A5B;
+
+    static const uint8_t expected[] = {
+        0x8B, 0xF7,                         // mov esi, edi
+        0xE8, 0xE7, 0xE3, 0x00, 0x00,       // call 0x25E40
+        0x84, 0xC0,                         // test al, al
+        0x74, 0x0D,                         // je continue
+        0xC7, 0x44, 0x24, 0x10,
+        0x08, 0x94, 0x35, 0x77              // error 2000000008
+    };
+
+    auto base = reinterpret_cast<uint8_t*>(module);
+    auto gate = base + GateRva;
+
+    if (std::memcmp(gate, expected, sizeof(expected)) != 0)
+    {
+        std::cerr << "[IFS2] Protected-archive gate signature mismatch; "
+                     "refusing to patch unknown code.\n";
+        return false;
+    }
+
+    auto jump = base + ConditionalJumpRva;
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(jump, 1, PAGE_EXECUTE_READWRITE, &oldProtect))
+    {
+        std::cerr << "[IFS2] VirtualProtect failed for protected-archive gate. Win32="
+                  << GetLastError() << "\n";
+        return false;
+    }
+
+    // 74 0D = JE +0x0D. Change only the opcode to EB (JMP), so the archive
+    // always continues past the custom 2000000008 policy error.
+    *jump = 0xEB;
+    FlushInstructionCache(GetCurrentProcess(), jump, 1);
+
+    DWORD ignored = 0;
+    VirtualProtect(jump, 1, oldProtect, &ignored);
+
+    std::cout << "[IFS2] Installed verified in-memory bypass for custom error "
+                 "2000000008 at RVA 0x"
+              << std::hex << ConditionalJumpRva << std::dec << "\n";
+    return true;
+#else
+    return false;
+#endif
+}
+
 static void PrintPeDiagnostics(HMODULE module)
 {
     auto base = reinterpret_cast<const uint8_t*>(module);
@@ -504,6 +563,13 @@ int wmain(int argc, wchar_t** argv)
     if (!ResolveFunctions(dll, offsets))
     {
         std::cerr << "[ERROR] Failed to resolve the IFS2 interface.\n";
+        FreeLibrary(dll);
+        return 6;
+    }
+
+    if (!InstallProtectedArchiveBypass(dll))
+    {
+        std::cerr << "[ERROR] Refusing to continue without a verified protected-archive bypass.\n";
         FreeLibrary(dll);
         return 6;
     }
