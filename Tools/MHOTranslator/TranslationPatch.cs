@@ -780,8 +780,8 @@ internal static class TranslationPatch
         IReadOnlyDictionary<string, string> translations,
         out int replacements)
     {
-        replacements = 0;
-        return TransformPhysicalLines(text, line =>
+        int count = 0;
+        string result = TransformPhysicalLines(text, line =>
         {
             if (!line.Contains('\t'))
             {
@@ -795,13 +795,15 @@ internal static class TranslationPatch
                 if (TryTranslateExact(cells[i], translations, out string translated))
                 {
                     cells[i] = translated;
-                    replacements++;
+                    count++;
                     changed = true;
                 }
             }
 
             return changed ? string.Join('\t', cells) : line;
         });
+        replacements = count;
+        return result;
     }
 
     private static string PatchPhysicalLines(
@@ -809,17 +811,19 @@ internal static class TranslationPatch
         IReadOnlyDictionary<string, string> translations,
         out int replacements)
     {
-        replacements = 0;
-        return TransformPhysicalLines(text, line =>
+        int count = 0;
+        string result = TransformPhysicalLines(text, line =>
         {
             if (!TryTranslateExact(line, translations, out string translated))
             {
                 return line;
             }
 
-            replacements++;
+            count++;
             return translated;
         });
+        replacements = count;
+        return result;
     }
 
     private static string PatchXmlLeafText(
