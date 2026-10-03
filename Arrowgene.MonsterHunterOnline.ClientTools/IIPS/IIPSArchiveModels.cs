@@ -41,6 +41,7 @@ public sealed class IIPSArchiveOpenOptions
 {
     public bool LoadListFile { get; set; } = true;
     public bool VerifyChecksums { get; set; } = true;
+    public System.IO.FileShare FileShare { get; set; } = System.IO.FileShare.Read;
 }
 
 public sealed class IIPSArchiveCreationOptions
