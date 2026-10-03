@@ -35,6 +35,10 @@ public sealed class IIPSArchiveMetadata
     public string HeaderMd5 { get; internal set; } = string.Empty;
     public string BetMd5 { get; internal set; } = string.Empty;
     public string HetMd5 { get; internal set; } = string.Empty;
+    public uint Md5PieceSize { get; internal set; }
+    public uint RawChunkSize { get; internal set; }
+    internal byte[] Md5PatchBaseTag { get; set; } = new byte[16];
+    internal byte[] Md5PatchedTag { get; set; } = new byte[16];
 }
 
 public sealed class IIPSArchiveOpenOptions
