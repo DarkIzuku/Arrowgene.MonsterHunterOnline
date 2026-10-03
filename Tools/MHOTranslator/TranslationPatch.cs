@@ -30,9 +30,9 @@ internal static class TranslationPatch
             return 2;
         }
 
-        if (!File.Exists(catalogPath))
+        if (!File.Exists(catalogPath) && !Directory.Exists(catalogPath))
         {
-            Console.Error.WriteLine($"Catalog does not exist: {catalogPath}");
+            Console.Error.WriteLine($"Catalog file/directory does not exist: {catalogPath}");
             return 2;
         }
 
@@ -271,50 +271,67 @@ internal static class TranslationPatch
 
     private static Dictionary<string, string> LoadTranslations(string path)
     {
-        List<string[]> rows = ParseCsv(File.ReadAllText(path));
-        if (rows.Count == 0)
-        {
-            throw new InvalidDataException("Translation catalog is empty.");
-        }
+        List<string> catalogs = File.Exists(path)
+            ? [path]
+            : Directory.EnumerateFiles(path, "*.csv", SearchOption.AllDirectories)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-        string[] header = rows[0];
-        int sourceCol = FindColumn(header, "source");
-        int translationCol = FindColumn(header, "translation");
-        int statusCol = FindColumn(header, "status");
-
-        if (sourceCol < 0 || translationCol < 0)
+        if (catalogs.Count == 0)
         {
-            throw new InvalidDataException("Catalog must contain source and translation columns.");
+            throw new InvalidDataException("No CSV translation catalogs were found.");
         }
 
         Dictionary<string, string> result = new(StringComparer.Ordinal);
-        for (int i = 1; i < rows.Count; i++)
+
+        foreach (string catalog in catalogs)
         {
-            string[] row = rows[i];
-            if (sourceCol >= row.Length || translationCol >= row.Length)
+            List<string[]> rows = ParseCsv(File.ReadAllText(catalog));
+            if (rows.Count == 0)
             {
                 continue;
             }
 
-            string source = row[sourceCol];
-            string translation = row[translationCol];
-            string status = statusCol >= 0 && statusCol < row.Length ? row[statusCol] : "translate";
+            string[] header = rows[0];
+            int sourceCol = FindColumn(header, "source");
+            int translationCol = FindColumn(header, "translation");
+            int statusCol = FindColumn(header, "status");
 
-            if (!status.Equals("translate", StringComparison.OrdinalIgnoreCase) ||
-                string.IsNullOrEmpty(source) ||
-                string.IsNullOrEmpty(translation) ||
-                source == translation)
+            // Ignore analytical CSVs such as remaining-cjk.csv. A translation
+            // catalog must explicitly expose source + translation columns.
+            if (sourceCol < 0 || translationCol < 0)
             {
                 continue;
             }
 
-            if (result.TryGetValue(source, out string? existing) && existing != translation)
+            for (int i = 1; i < rows.Count; i++)
             {
-                throw new InvalidDataException(
-                    $"Conflicting translations for '{source}': '{existing}' vs '{translation}'.");
-            }
+                string[] row = rows[i];
+                if (sourceCol >= row.Length || translationCol >= row.Length)
+                {
+                    continue;
+                }
 
-            result[source] = translation;
+                string source = row[sourceCol];
+                string translation = row[translationCol];
+                string status = statusCol >= 0 && statusCol < row.Length ? row[statusCol] : "translate";
+
+                if (!status.Equals("translate", StringComparison.OrdinalIgnoreCase) ||
+                    string.IsNullOrEmpty(source) ||
+                    string.IsNullOrEmpty(translation) ||
+                    source == translation)
+                {
+                    continue;
+                }
+
+                if (result.TryGetValue(source, out string? existing) && existing != translation)
+                {
+                    throw new InvalidDataException(
+                        $"Conflicting translations for '{source}': '{existing}' vs '{translation}' (catalog {catalog}).");
+                }
+
+                result[source] = translation;
+            }
         }
 
         return result;
