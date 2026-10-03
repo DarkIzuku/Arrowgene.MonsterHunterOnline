@@ -13,7 +13,11 @@ param(
 
     [switch]$UiSmoke,
 
-    [string]$UiSmokeSource = ""
+    [string]$UiSmokeSource = "",
+
+    [string]$UiSmokeReplacement = "",
+
+    [switch]$UiSmokeInPlaceEqual
 )
 
 $ErrorActionPreference = "Stop"
@@ -69,6 +73,13 @@ Write-Host "[1/2] Applying approved Spanish translations..."
 if ($UiSmoke) {
     if ([string]::IsNullOrWhiteSpace($UiSmokeSource)) {
         & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf"
+    } elseif ($UiSmokeInPlaceEqual) {
+        if ([string]::IsNullOrEmpty($UiSmokeReplacement)) {
+            throw "UiSmokeInPlaceEqual requires -UiSmokeReplacement."
+        }
+        & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf" --only-source $UiSmokeSource --override-translation $UiSmokeReplacement --swf-inplace-equal
+    } elseif (-not [string]::IsNullOrEmpty($UiSmokeReplacement)) {
+        & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf" --only-source $UiSmokeSource --override-translation $UiSmokeReplacement
     } else {
         & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf" --only-source $UiSmokeSource
     }

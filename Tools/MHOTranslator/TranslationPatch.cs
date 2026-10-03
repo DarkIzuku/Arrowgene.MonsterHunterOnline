@@ -26,6 +26,8 @@ internal static class TranslationPatch
         bool onlySwf = args.Any(x => x.Equals("--only-swf", StringComparison.OrdinalIgnoreCase));
         string? onlyPath = GetOption(args, "--only-path");
         string? onlySource = GetOption(args, "--only-source");
+        string? overrideTranslation = GetOption(args, "--override-translation");
+        bool swfInPlaceEqual = args.Any(x => x.Equals("--swf-inplace-equal", StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(onlyPath))
         {
             onlyPath = onlyPath.Replace('\\', '/').TrimStart('/');
@@ -57,7 +59,7 @@ internal static class TranslationPatch
 
                 translations = new Dictionary<string, string>(StringComparer.Ordinal)
                 {
-                    [onlySource] = selectedTranslation,
+                    [onlySource] = string.IsNullOrEmpty(overrideTranslation) ? selectedTranslation : overrideTranslation,
                 };
             }
         }
@@ -78,7 +80,15 @@ internal static class TranslationPatch
         }
         if (!string.IsNullOrWhiteSpace(onlySource))
         {
-            Console.WriteLine($"Only source:  {onlySource}");
+            Console.WriteLine($"Only source:  {EscapeForLog(onlySource)}");
+        }
+        if (!string.IsNullOrEmpty(overrideTranslation))
+        {
+            Console.WriteLine($"Override:     {EscapeForLog(overrideTranslation)}");
+        }
+        if (swfInPlaceEqual)
+        {
+            Console.WriteLine("SWF mode:     equal-length in-place ABC patch");
         }
 
         Directory.CreateDirectory(outputRoot);
@@ -122,7 +132,9 @@ internal static class TranslationPatch
                 }
                 else if (extension == ".swf" && SwfFile.IsSwf(file))
                 {
-                    patched = PatchSwf(original, relative, translations, out fileReplacements);
+                    patched = swfInPlaceEqual
+                        ? PatchSwfInPlaceEqualLength(original, relative, translations, out fileReplacements)
+                        : PatchSwf(original, relative, translations, out fileReplacements);
                     swfFiles++;
                 }
                 else if (IsTextExtension(extension))
@@ -812,6 +824,141 @@ internal static class TranslationPatch
             throw new InvalidDataException("DAT write verification failed.");
         }
 
+        return result;
+    }
+
+    private static byte[]? PatchSwfInPlaceEqualLength(
+        byte[] original,
+        string name,
+        IReadOnlyDictionary<string, string> translations,
+        out int replacements)
+    {
+        replacements = 0;
+        SwfFile swf = SwfFile.Open(original, name);
+        byte[] uncompressed = swf.GetUncompressedBytes();
+        byte[] patchedFws = (byte[])uncompressed.Clone();
+
+        foreach (SwfTag tag in swf.Tags)
+        {
+            if (tag.Code != 82)
+            {
+                continue;
+            }
+
+            ReadOnlySpan<byte> tagData = tag.Data.Span;
+            if (tagData.Length < 5)
+            {
+                continue;
+            }
+
+            int offset = 4;
+            while (offset < tagData.Length && tagData[offset] != 0)
+            {
+                offset++;
+            }
+            if (offset >= tagData.Length)
+            {
+                continue;
+            }
+
+            offset++;
+            int abcOffset = offset;
+            ReadOnlySpan<byte> abc = tagData.Slice(abcOffset);
+            if (abc.Length < 4)
+            {
+                continue;
+            }
+
+            int p = 4;
+            uint intCount = ReadU30(abc, ref p);
+            for (uint i = 1; i < intCount; i++) SkipU32(abc, ref p);
+
+            uint uintCount = ReadU30(abc, ref p);
+            for (uint i = 1; i < uintCount; i++) SkipU32(abc, ref p);
+
+            uint doubleCount = ReadU30(abc, ref p);
+            if (doubleCount > 0)
+            {
+                int doubleBytes = checked((int)((doubleCount - 1) * 8));
+                if (doubleBytes > abc.Length - p)
+                {
+                    throw new InvalidDataException("ABC double pool exceeds tag.");
+                }
+                p += doubleBytes;
+            }
+
+            uint stringCount = ReadU30(abc, ref p);
+            for (uint i = 1; i < stringCount; i++)
+            {
+                uint length = ReadU30(abc, ref p);
+                int stringLength = checked((int)length);
+                if (stringLength > abc.Length - p)
+                {
+                    throw new InvalidDataException("ABC string exceeds tag.");
+                }
+
+                ReadOnlySpan<byte> raw = abc.Slice(p, stringLength);
+                try
+                {
+                    string source = StrictUtf8.GetString(raw);
+                    if (translations.TryGetValue(source, out string? translation))
+                    {
+                        byte[] replacement = Utf8NoBom.GetBytes(translation);
+                        if (replacement.Length != stringLength)
+                        {
+                            throw new InvalidDataException(
+                                $"Equal-length SWF mode requires identical UTF-8 byte length: " +
+                                $"source={EscapeForLog(source)} ({stringLength}), " +
+                                $"replacement={EscapeForLog(translation)} ({replacement.Length}).");
+                        }
+
+                        int absolute = checked(tag.Offset + tag.HeaderLength + abcOffset + p);
+                        replacement.CopyTo(patchedFws.AsSpan(absolute, stringLength));
+                        replacements++;
+                        Console.WriteLine(
+                            $"[SWF-INPLACE] tag=82 source={EscapeForLog(source)} " +
+                            $"replacement={EscapeForLog(translation)} bytes={stringLength} offset=0x{absolute:X}");
+                    }
+                }
+                catch (DecoderFallbackException)
+                {
+                }
+
+                p += stringLength;
+            }
+        }
+
+        if (replacements == 0)
+        {
+            return null;
+        }
+
+        // The decompressed SWF structure is byte-for-byte identical except for the
+        // selected equal-length string bytes. No tag length, U30 or ABC offset changes.
+        if (swf.Compression == SwfCompression.Uncompressed)
+        {
+            _ = SwfFile.Open(patchedFws, name + ":verify-inplace");
+            return patchedFws;
+        }
+
+        if (swf.Compression != SwfCompression.Zlib)
+        {
+            throw new NotSupportedException($"Cannot rebuild {swf.Compression} SWF: {name}");
+        }
+
+        using MemoryStream compressed = new();
+        compressed.WriteByte((byte)'C');
+        compressed.WriteByte((byte)'W');
+        compressed.WriteByte((byte)'S');
+        compressed.WriteByte(patchedFws[3]);
+        compressed.Write(patchedFws, 4, 4);
+        using (ZLibStream zlib = new(compressed, CompressionLevel.SmallestSize, leaveOpen: true))
+        {
+            zlib.Write(patchedFws, 8, patchedFws.Length - 8);
+        }
+
+        byte[] result = compressed.ToArray();
+        _ = SwfFile.Open(result, name + ":verify-inplace");
         return result;
     }
 
