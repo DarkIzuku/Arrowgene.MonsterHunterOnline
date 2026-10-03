@@ -47,8 +47,29 @@ public class DatFile
         aes.Mode = CipherMode.ECB;
         aes.Padding = PaddingMode.None;
         aes.Key = DatKey;
+
+        // MHO's DAT format applies the AES encrypt primitive while reading.
+        // Keep this behavior for compatibility with the existing client data.
         using ICryptoTransform encryptor = aes.CreateEncryptor();
         return encryptor.TransformFinalBlock(data, 0, data.Length);
+    }
+
+    public static byte[] EncryptDat(byte[] plain)
+    {
+        if (plain.Length % 16 != 0)
+        {
+            throw new ArgumentException("DAT plaintext must be padded to a 16-byte AES block.", nameof(plain));
+        }
+
+        using Aes aes = Aes.Create();
+        aes.Mode = CipherMode.ECB;
+        aes.Padding = PaddingMode.None;
+        aes.Key = DatKey;
+
+        // Inverse of DecryptDat above. This intentionally uses the AES decrypt
+        // primitive so DecryptDat(EncryptDat(x)) == x for MHO DAT payloads.
+        using ICryptoTransform decryptor = aes.CreateDecryptor();
+        return decryptor.TransformFinalBlock(plain, 0, plain.Length);
     }
 
     public static bool IsDatFile(byte[] data)
