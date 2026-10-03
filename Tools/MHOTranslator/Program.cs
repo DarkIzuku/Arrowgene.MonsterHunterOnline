@@ -189,8 +189,19 @@ static int ScanCommand(string[] args)
         return 2;
     }
 
-    string output = GetOption(args, "--output")
-                    ?? Path.Combine(Environment.CurrentDirectory, "mho-cjk-strings.csv");
+    string output = Path.GetFullPath(
+        GetOption(args, "--output")
+        ?? Path.Combine(Environment.CurrentDirectory, "mho-cjk-strings.csv"));
+    string priorityOutput = Path.Combine(
+        Path.GetDirectoryName(output)!,
+        Path.GetFileNameWithoutExtension(output) + "-priority.csv");
+
+    HashSet<string> generatedOutputs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        output,
+        Path.GetFullPath(priorityOutput),
+    };
+
     bool scanAll = args.Any(x => x.Equals("--all", StringComparison.OrdinalIgnoreCase));
     double maxMb = double.TryParse(GetOption(args, "--max-mb"), out double parsedMb) ? parsedMb : 16;
     long maxBytes = (long)(Math.Max(0.1, maxMb) * 1024 * 1024);
@@ -208,10 +219,18 @@ static int ScanCommand(string[] args)
     int binaryUtfFiles = 0;
     int skippedLarge = 0;
     int skippedBinary = 0;
+    int skippedGenerated = 0;
     int unreadable = 0;
 
     foreach (string file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
     {
+        string fullFile = Path.GetFullPath(file);
+        if (generatedOutputs.Contains(fullFile))
+        {
+            skippedGenerated++;
+            continue;
+        }
+
         FileInfo info;
         try
         {
@@ -382,8 +401,9 @@ static int ScanCommand(string[] args)
     Console.WriteLine($"CJK occurrences:   {collapsed.Sum(x => x.Occurrences)}");
     Console.WriteLine($"Skipped large:     {skippedLarge}");
     Console.WriteLine($"Skipped binary:    {skippedBinary}");
+    Console.WriteLine($"Skipped generated: {skippedGenerated}");
     Console.WriteLine($"Unreadable:        {unreadable}");
-    Console.WriteLine($"Output:            {Path.GetFullPath(output)}");
+    Console.WriteLine($"Output:            {output}");
 
     var topFiles = collapsed.GroupBy(r => r.Path)
         .Select(g => new { Path = g.Key, Count = g.Count(), Occurrences = g.Sum(x => x.Occurrences) })
@@ -408,27 +428,26 @@ static int ScanCommand(string[] args)
         Console.WriteLine($"{group.Key,-8} {group.Count(),8}");
     }
 
-    string priorityOutput = Path.Combine(
-        Path.GetDirectoryName(Path.GetFullPath(output))!,
-        Path.GetFileNameWithoutExtension(output) + "-priority.csv");
+    var priorityGroups = collapsed
+        .Where(x => x.Priority is "high" or "medium")
+        .GroupBy(x => new { x.Source, x.FieldRole, x.Priority })
+        .Select(g => new
+        {
+            g.Key.Source,
+            g.Key.FieldRole,
+            g.Key.Priority,
+            Occurrences = g.Sum(x => x.Occurrences),
+            First = g.First(),
+        })
+        .OrderBy(x => x.Priority == "high" ? 0 : 1)
+        .ThenByDescending(x => x.Occurrences)
+        .ThenBy(x => x.Source, StringComparer.Ordinal)
+        .ToList();
 
     using (StreamWriter writer = new(priorityOutput, false, new UTF8Encoding(true)))
     {
         writer.WriteLine("source,field_role,priority,occurrences,example_path,example_location,translation,notes");
-        foreach (var group in collapsed
-                     .Where(x => x.Priority is "high" or "medium")
-                     .GroupBy(x => new { x.Source, x.FieldRole, x.Priority })
-                     .Select(g => new
-                     {
-                         g.Key.Source,
-                         g.Key.FieldRole,
-                         g.Key.Priority,
-                         Occurrences = g.Sum(x => x.Occurrences),
-                         First = g.First(),
-                     })
-                     .OrderBy(x => x.Priority == "high" ? 0 : 1)
-                     .ThenByDescending(x => x.Occurrences)
-                     .ThenBy(x => x.Source, StringComparer.Ordinal))
+        foreach (var group in priorityGroups)
         {
             writer.WriteLine(string.Join(",",
                 Csv(group.Source),
@@ -442,6 +461,7 @@ static int ScanCommand(string[] args)
         }
     }
 
+    Console.WriteLine($"Priority unique:    {priorityGroups.Count}");
     Console.WriteLine($"Priority catalog:   {priorityOutput}");
 
     return 0;
