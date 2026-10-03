@@ -14,6 +14,7 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "apply" => TranslationPatch.ApplyCommand(args.Skip(1).ToArray()),
     "build-ifs" => TranslationPatch.BuildIfsCommand(args.Skip(1).ToArray()),
     "clone-ifs" => TranslationPatch.CloneIfsCommand(args.Skip(1).ToArray()),
+    "inspect-ifs" => TranslationPatch.InspectIfsCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
     _ => UnknownCommand(args[0])
@@ -46,6 +47,10 @@ Commands:
   clone-ifs <base.ifs> [--out <output.ifs>]
       Rebuilds the archive without modifying any entry, then verifies all
       extracted contents. Used to test compatibility with Tencent IFS2.dll.
+
+  inspect-ifs <archive.ifs>
+      Dumps the raw Tencent nIFS header, integrity-table layout and recomputed
+      MD5 values needed for a client-compatible writer.
 
   compare <original-dir> <patched-dir> [--output <csv>]
       Compares two extracted trees and reports which files the existing
