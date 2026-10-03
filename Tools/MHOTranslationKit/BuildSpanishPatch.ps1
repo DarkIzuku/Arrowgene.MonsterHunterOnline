@@ -9,7 +9,9 @@ param(
 
     [string]$WorkDir = "",
 
-    [switch]$UiOnly
+    [switch]$UiOnly,
+
+    [switch]$UiSmoke
 )
 
 $ErrorActionPreference = "Stop"
@@ -54,11 +56,13 @@ Write-Host "Extracted:     $ExtractedDir"
 Write-Host "Catalogs:      $catalogDir"
 Write-Host "Patched files: $patchedDir"
 Write-Host "Output IFS:    $OutputIfs"
-Write-Host "Mode:          $(if ($UiOnly) { 'SWF/UI only' } else { 'all supported resources' })"
+Write-Host "Mode:          $(if ($UiSmoke) { 'single SWF smoke test (mhui.swf)' } elseif ($UiOnly) { 'SWF/UI only' } else { 'all supported resources' })"
 Write-Host ""
 
 Write-Host "[1/2] Applying approved Spanish translations..."
-if ($UiOnly) {
+if ($UiSmoke) {
+    & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf"
+} elseif ($UiOnly) {
     & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf
 } else {
     & $translator apply $ExtractedDir $catalogDir --out $patchedDir
