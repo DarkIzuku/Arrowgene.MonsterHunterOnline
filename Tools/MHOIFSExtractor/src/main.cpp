@@ -24,6 +24,7 @@ struct Offsets
     uintptr_t SFileCloseFile = 0x20FB0;
     uintptr_t SFileReadFile = 0x220C0;
     uintptr_t NIFSOpenFileEx = 0x1FA20;
+    uintptr_t OpenArchiveCore = 0x176A0;
 };
 
 using SFileOpenArchive_t = HANDLE(__stdcall*)(const char*, int);
@@ -37,6 +38,7 @@ static SFileExtractFile_t gExtractFile = nullptr;
 static SFileCloseFile_t gCloseFile = nullptr;
 static SFileReadFile_t gReadFile = nullptr;
 static NIFSOpenFileEx_t gOpenFile = nullptr;
+static void* gOpenArchiveCore = nullptr;
 
 static std::string WideToUtf8(const std::wstring& value)
 {
@@ -164,95 +166,67 @@ static bool InstallDebugShim(HMODULE module)
 #endif
 }
 
-static HANDLE OpenArchiveSafe(const std::string& archivePath)
+static bool OpenArchiveCoreCompat(
+    const char* archivePath,
+    DWORD flags,
+    DWORD priority,
+    HANDLE* outArchive)
 {
 #if defined(_MSC_VER) && defined(_M_IX86)
-    HANDLE result = nullptr;
+    bool result = false;
+    auto fn = gOpenArchiveCore;
+
     __try
     {
-        SetLastError(ERROR_SUCCESS);
-        std::cout << "[IFS2] Calling SFileOpenArchive_w...\n";
-        result = gOpenArchive(archivePath.c_str(), 0);
-        DWORD lastError = GetLastError();
-        std::cout << "[IFS2] SFileOpenArchive_w returned " << result
-                  << " GetLastError=" << lastError
-                  << " (0x" << std::hex << lastError << std::dec << ")\n";
+        __asm
+        {
+            mov ecx, archivePath
+            mov edx, outArchive
+            push priority
+            push flags
+            call fn
+            mov result, al
+        }
     }
     __except(EXCEPTION_EXECUTE_HANDLER)
     {
         DWORD code = GetExceptionCode();
-        std::cerr << "[IFS2] SFileOpenArchive_w raised SEH exception 0x"
+        std::cerr << "[IFS2] OpenArchiveCore raised SEH exception 0x"
                   << std::hex << code << std::dec << "\n";
-        return nullptr;
+        return false;
     }
+
     return result;
 #else
-    SetLastError(ERROR_SUCCESS);
-    HANDLE result = gOpenArchive(archivePath.c_str(), 0);
-    DWORD lastError = GetLastError();
-    std::cout << "[IFS2] SFileOpenArchive_w returned " << result
-              << " GetLastError=" << lastError
-              << " (0x" << std::hex << lastError << std::dec << ")\n";
-    return result;
+    return false;
 #endif
 }
 
-static bool InstallProtectedArchiveBypass(HMODULE module)
+static HANDLE OpenArchiveSafe(const std::string& archivePath, DWORD flags)
 {
-#if defined(_M_IX86)
-    // Verified only for:
-    // SHA-256 69d1a8fa9df64149779c42fa19d7194f1917ba968e91efe4af2d535e21663d25
-    //
-    // In this IFS2.dll, SFileOpenArchive parses the archive successfully, then
-    // calls RVA 0x25E40. That helper recomputes and compares the MD5 of the HET
-    // and BET tables. When BOTH hashes match, the caller assigns custom error
-    // 2000000008 and aborts the open. For extraction of the user's own patch,
-    // bypass only that policy gate while leaving all parsing and hash work intact.
-    constexpr uintptr_t GateRva = 0x17A52;
-    constexpr uintptr_t ConditionalJumpRva = 0x17A5B;
+#if defined(_MSC_VER) && defined(_M_IX86)
+    HANDLE result = nullptr;
+    SetLastError(ERROR_SUCCESS);
 
-    static const uint8_t expected[] = {
-        0x8B, 0xF7,                         // mov esi, edi
-        0xE8, 0xE7, 0xE3, 0x00, 0x00,       // call 0x25E40
-        0x84, 0xC0,                         // test al, al
-        0x74, 0x0D,                         // je continue
-        0xC7, 0x44, 0x24, 0x10,
-        0x08, 0x94, 0x35, 0x77              // error 2000000008
-    };
+    std::cout << "[IFS2] Calling OpenArchiveCore with flags=0x"
+              << std::hex << flags << std::dec << "...\n";
 
-    auto base = reinterpret_cast<uint8_t*>(module);
-    auto gate = base + GateRva;
+    bool ok = OpenArchiveCoreCompat(
+        archivePath.c_str(),
+        flags,
+        0,
+        &result);
 
-    if (std::memcmp(gate, expected, sizeof(expected)) != 0)
-    {
-        std::cerr << "[IFS2] Protected-archive gate signature mismatch; "
-                     "refusing to patch unknown code.\n";
-        return false;
-    }
+    DWORD lastError = GetLastError();
+    std::cout << "[IFS2] OpenArchiveCore returned "
+              << (ok ? "true" : "false")
+              << " handle=" << result
+              << " GetLastError=" << lastError
+              << " (0x" << std::hex << lastError << std::dec << ")\n";
 
-    auto jump = base + ConditionalJumpRva;
-    DWORD oldProtect = 0;
-    if (!VirtualProtect(jump, 1, PAGE_EXECUTE_READWRITE, &oldProtect))
-    {
-        std::cerr << "[IFS2] VirtualProtect failed for protected-archive gate. Win32="
-                  << GetLastError() << "\n";
-        return false;
-    }
-
-    // 74 0D = JE +0x0D. Change only the opcode to EB (JMP), so the archive
-    // always continues past the custom 2000000008 policy error.
-    *jump = 0xEB;
-    FlushInstructionCache(GetCurrentProcess(), jump, 1);
-
-    DWORD ignored = 0;
-    VirtualProtect(jump, 1, oldProtect, &ignored);
-
-    std::cout << "[IFS2] Installed verified in-memory bypass for custom error "
-                 "2000000008 at RVA 0x"
-              << std::hex << ConditionalJumpRva << std::dec << "\n";
-    return true;
+    return ok ? result : nullptr;
 #else
-    return false;
+    return nullptr;
 #endif
 }
 
@@ -320,7 +294,22 @@ static bool ResolveFunctions(HMODULE dll, const Offsets& offsets)
     gOpenFile = reinterpret_cast<NIFSOpenFileEx_t>(
         resolve("NIFSOpenFileEx", offsets.NIFSOpenFileEx));
 
-    return gOpenArchive && gExtractFile && gCloseFile && gReadFile && gOpenFile;
+    if (!IsExecutableOffset(dll, offsets.OpenArchiveCore))
+    {
+        std::cerr << "[IFS2] OpenArchiveCore RVA 0x" << std::hex
+                  << offsets.OpenArchiveCore << std::dec
+                  << " is not executable.\n";
+        return false;
+    }
+
+    gOpenArchiveCore = reinterpret_cast<void*>(
+        reinterpret_cast<uintptr_t>(dll) + offsets.OpenArchiveCore);
+
+    std::cout << "[IFS2] Using verified OpenArchiveCore RVA 0x"
+              << std::hex << offsets.OpenArchiveCore << std::dec << "\n";
+
+    return gOpenArchive && gExtractFile && gCloseFile && gReadFile &&
+           gOpenFile && gOpenArchiveCore;
 }
 
 static bool ExtractCompat(HANDLE archive, const char* input, const char* output)
@@ -467,6 +456,7 @@ Options:
   --close-offset <hex>        Compatibility override for SFileCloseFile.
   --read-offset <hex>         Compatibility override for SFileReadFile.
   --openfile-offset <hex>     Compatibility override for NIFSOpenFileEx.
+  --open-flags <hex>          Archive open flags. Default: 0x100 (read-only).
 
 The built-in compatibility offsets are the verified wrapper entry points for
 the MHO IFS2.dll profile identified by PE TimeDateStamp 0x533A60DB and
@@ -491,6 +481,7 @@ int wmain(int argc, wchar_t** argv)
     fs::path ifs2Path = fs::absolute(fs::path(argv[0]).parent_path() / L"IFS2.dll");
     fs::path outDir = archivePath.parent_path() / (archivePath.stem().wstring() + L"_extracted");
     Offsets offsets;
+    DWORD openFlags = 0x100; // MPQ_OPEN_READ_ONLY in the StormLib base used by IFS2.
 
     for (int i = 3; i < argc; ++i)
     {
@@ -519,6 +510,8 @@ int wmain(int argc, wchar_t** argv)
             offsets.SFileReadFile = ParseHex(needValue(L"--read-offset"));
         else if (arg == L"--openfile-offset")
             offsets.NIFSOpenFileEx = ParseHex(needValue(L"--openfile-offset"));
+        else if (arg == L"--open-flags")
+            openFlags = static_cast<DWORD>(ParseHex(needValue(L"--open-flags")));
         else
         {
             std::wcerr << L"[ERROR] Unknown option: " << arg << L"\n";
@@ -575,7 +568,7 @@ int wmain(int argc, wchar_t** argv)
     }
 
     std::string archiveUtf8 = WideToUtf8(archivePath.wstring());
-    HANDLE archive = OpenArchiveSafe(archiveUtf8);
+    HANDLE archive = OpenArchiveSafe(archiveUtf8, openFlags);
     if (!archive)
     {
         std::cerr << "[ERROR] IFS2.dll failed to open the archive.\n";
