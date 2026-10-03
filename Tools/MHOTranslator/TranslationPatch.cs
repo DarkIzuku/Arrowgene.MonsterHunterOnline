@@ -421,11 +421,10 @@ internal static class TranslationPatch
                     outputIfs,
                     new IIPSArchiveSaveOptions
                     {
-                        // For the compatibility smoke test, preserve the original
-                        // (listfile) entry exactly. Rebuilding it would change one
-                        // archive payload and weaken the no-op test.
+                        // Preserve every original entry and raw archive layout.
                         IncludeListFile = false,
                         PreserveUnchangedEntries = true,
+                        PreserveOriginalLayout = true,
                     });
             }
 
@@ -568,8 +567,9 @@ internal static class TranslationPatch
                     outputIfs,
                     new IIPSArchiveSaveOptions
                     {
-                        IncludeListFile = true,
+                        IncludeListFile = false,
                         PreserveUnchangedEntries = true,
+                        PreserveOriginalLayout = true,
                     });
 
                 Console.WriteLine($"Replaced:      {replaced}");
