@@ -7,7 +7,9 @@ param(
 
     [string]$OutputIfs = "",
 
-    [string]$WorkDir = ""
+    [string]$WorkDir = "",
+
+    [switch]$UiOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,10 +54,15 @@ Write-Host "Extracted:     $ExtractedDir"
 Write-Host "Catalogs:      $catalogDir"
 Write-Host "Patched files: $patchedDir"
 Write-Host "Output IFS:    $OutputIfs"
+Write-Host "Mode:          $(if ($UiOnly) { 'SWF/UI only' } else { 'all supported resources' })"
 Write-Host ""
 
 Write-Host "[1/2] Applying approved Spanish translations..."
-& $translator apply $ExtractedDir $catalogDir --out $patchedDir
+if ($UiOnly) {
+    & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf
+} else {
+    & $translator apply $ExtractedDir $catalogDir --out $patchedDir
+}
 if ($LASTEXITCODE -ne 0) {
     throw "Translation apply failed with exit code $LASTEXITCODE."
 }
