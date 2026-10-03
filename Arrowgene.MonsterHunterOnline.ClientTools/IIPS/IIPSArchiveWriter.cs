@@ -23,6 +23,33 @@ internal static class IIPSArchiveWriter
         string tempPath = Path.Combine(targetDirectory, Path.GetRandomFileName());
         List<IIPSArchiveEntryRecord> records = PrepareRecords(archive, options);
 
+        if (options.PreserveOriginalLayout)
+        {
+            try
+            {
+                SavePreservingOriginalLayout(archive, targetPath, tempPath, records, options);
+
+                bool overwriteCurrentSource = archive.CurrentSourcePath != null &&
+                                              string.Equals(Path.GetFullPath(archive.CurrentSourcePath), targetPath, StringComparison.OrdinalIgnoreCase);
+                if (overwriteCurrentSource)
+                {
+                    archive.ReleaseSourceHandles();
+                }
+
+                File.Move(tempPath, targetPath, overwrite: true);
+                IIPSArchiveReader.Load(archive, targetPath, new IIPSArchiveOpenOptions());
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+
+            return;
+        }
+
         try
         {
             using (FileStream output = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
@@ -118,6 +145,152 @@ internal static class IIPSArchiveWriter
                 File.Delete(tempPath);
             }
         }
+    }
+
+    private static void SavePreservingOriginalLayout(
+        IIPSArchive archive,
+        string targetPath,
+        string tempPath,
+        List<IIPSArchiveEntryRecord> records,
+        IIPSArchiveSaveOptions options)
+    {
+        string? sourcePath = archive.CurrentSourcePath;
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+        {
+            throw new InvalidOperationException("Original-layout save requires a source-backed archive.");
+        }
+
+        // This mode is intentionally replacement-only. It preserves every original
+        // file offset, HET/BET location, padding byte and integrity-region location.
+        if (records.Any(record => record.FileOffset == 0 && record.Index != 0))
+        {
+            throw new InvalidOperationException("Original-layout save cannot add new archive entries.");
+        }
+
+        File.Copy(sourcePath, tempPath, overwrite: true);
+
+        using FileStream output = new FileStream(tempPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        IIPSArchiveHeaderData sourceHeader = ReadSourceHeader(output);
+
+        List<ulong> occupiedOffsets = records
+            .Where(record => record.FileOffset >= IIPSArchiveFormat.HeaderLength && record.FileOffset < sourceHeader.HetOffset)
+            .Select(record => record.FileOffset)
+            .Distinct()
+            .OrderBy(offset => offset)
+            .ToList();
+
+        foreach (IIPSArchiveEntryRecord record in records)
+        {
+            if (record.SourceKind != IIPSArchiveEntrySourceKind.Memory)
+            {
+                continue;
+            }
+
+            ulong originalOffset = record.FileOffset;
+            if (originalOffset < IIPSArchiveFormat.HeaderLength || originalOffset >= sourceHeader.HetOffset)
+            {
+                throw new InvalidDataException(
+                    $"Modified record {record.Index} has unsupported original offset 0x{originalOffset:X}.");
+            }
+
+            ulong nextOffset = sourceHeader.HetOffset;
+            foreach (ulong candidate in occupiedOffsets)
+            {
+                if (candidate > originalOffset)
+                {
+                    nextOffset = candidate;
+                    break;
+                }
+            }
+
+            ulong capacity = nextOffset - originalOffset;
+            byte[] stored = BuildStoredData(archive, record, options, originalOffset);
+            record.CompressedSize = (ulong)stored.Length;
+
+            if ((ulong)stored.Length > capacity)
+            {
+                throw new InvalidDataException(
+                    $"Modified record {record.Index} ({record.FileName}) needs {stored.Length} stored bytes " +
+                    $"but original layout has only {capacity} bytes available at 0x{originalOffset:X}.");
+            }
+
+            output.Position = checked((long)originalOffset);
+            output.Write(stored, 0, stored.Length);
+        }
+
+        byte[] betSection = IIPSArchiveSerialization.BuildSection(
+            IIPSArchiveFormat.BetSignature,
+            BuildBetData(records, archive.Metadata.OriginalBetHeader));
+
+        if ((ulong)betSection.Length != sourceHeader.BetLength)
+        {
+            throw new InvalidDataException(
+                $"BET length changed in original-layout mode: original={sourceHeader.BetLength}, rebuilt={betSection.Length}.");
+        }
+
+        output.Position = checked((long)sourceHeader.BetOffset);
+        output.Write(betSection, 0, betSection.Length);
+
+        sourceHeader.BetMd5 = IIPSArchiveCrypto.Md5(betSection);
+        byte[] originalHet = archive.Metadata.OriginalHetSection;
+        if (originalHet.Length == 0 || (ulong)originalHet.Length != sourceHeader.HetLength)
+        {
+            throw new InvalidDataException("Original HET section was not preserved correctly.");
+        }
+        sourceHeader.HetMd5 = IIPSArchiveCrypto.Md5(originalHet);
+
+        byte[] headerBytes = IIPSArchiveSerialization.BuildHeader(sourceHeader);
+        output.Position = 0;
+        output.Write(headerBytes, 0, headerBytes.Length);
+        output.Flush();
+
+        byte[] md5Table = BuildRawChunkMd5Table(output, sourceHeader.ArchiveSize, sourceHeader.Md5PieceSize);
+        if ((ulong)md5Table.Length != sourceHeader.Md5TableLength)
+        {
+            throw new InvalidDataException(
+                $"MD5 table length changed in original-layout mode: original={sourceHeader.Md5TableLength}, rebuilt={md5Table.Length}.");
+        }
+
+        output.Position = checked((long)sourceHeader.Md5TableOffset);
+        output.Write(md5Table, 0, md5Table.Length);
+        output.Flush();
+    }
+
+    private static IIPSArchiveHeaderData ReadSourceHeader(FileStream stream)
+    {
+        stream.Position = 0;
+        using BinaryReader reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+
+        IIPSArchiveHeaderData header = new IIPSArchiveHeaderData
+        {
+            Magic = reader.ReadUInt32(),
+            HeaderLength = reader.ReadUInt32(),
+            FormatVersion = reader.ReadUInt16(),
+            SectorSizeShift = reader.ReadUInt16(),
+            ArchiveSize = reader.ReadUInt64(),
+            BetOffset = reader.ReadUInt64(),
+            HetOffset = reader.ReadUInt64(),
+            Md5TableOffset = reader.ReadUInt64(),
+            BitmapOffset = reader.ReadUInt64(),
+            HetLength = reader.ReadUInt64(),
+            BetLength = reader.ReadUInt64(),
+            Md5TableLength = reader.ReadUInt64(),
+            BitmapLength = reader.ReadUInt64(),
+            Md5PieceSize = reader.ReadUInt32(),
+            RawChunkSize = reader.ReadUInt32(),
+            Md5PatchBaseTag = reader.ReadBytes(16),
+            Md5PatchedTag = reader.ReadBytes(16),
+            BetMd5 = Convert.ToHexString(reader.ReadBytes(16)).ToLowerInvariant(),
+            HetMd5 = Convert.ToHexString(reader.ReadBytes(16)).ToLowerInvariant(),
+            HeaderMd5 = Convert.ToHexString(reader.ReadBytes(16)).ToLowerInvariant(),
+        };
+
+        if (header.Magic != IIPSArchiveFormat.Magic || header.HeaderLength != IIPSArchiveFormat.HeaderLength)
+        {
+            throw new InvalidDataException("Source archive does not have the expected nIFS header.");
+        }
+
+        return header;
     }
 
     private static void PadToAlignment(FileStream output, uint alignment)
