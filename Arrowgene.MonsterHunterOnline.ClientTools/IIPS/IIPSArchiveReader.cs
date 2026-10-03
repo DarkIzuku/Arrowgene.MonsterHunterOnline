@@ -41,6 +41,10 @@ internal static class IIPSArchiveReader
                 HeaderMd5 = header.HeaderMd5,
                 BetMd5 = header.BetMd5,
                 HetMd5 = header.HetMd5,
+                Md5PieceSize = header.Md5PieceSize,
+                RawChunkSize = header.RawChunkSize,
+                Md5PatchBaseTag = (byte[])header.Md5PatchBaseTag.Clone(),
+                Md5PatchedTag = (byte[])header.Md5PatchedTag.Clone(),
             };
 
             archive.ReplaceState(path, stream, reader, metadata, records, lookup);
