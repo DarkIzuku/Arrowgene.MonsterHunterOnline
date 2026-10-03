@@ -445,7 +445,96 @@ internal static class IIPSArchiveWriter
         return ms.ToArray();
     }
 
-    private static byte[] BuildBetData(List<IIPSArchiveEntryRecord> records)
+    private static byte[] BuildBetData(List<IIPSArchiveEntryRecord> records, uint[] template)
+    {
+        if (template.Length == 21 && template[1] == (uint)records.Count)
+        {
+            uint[] header = (uint[])template.Clone();
+            uint totalEntryBits = header[2];
+            uint bitIndexFilePos = header[3];
+            uint bitIndexFileSize = header[4];
+            uint bitIndexCompressedSize = header[5];
+            uint bitIndexFlags = header[6];
+            uint bitIndexMd5 = header[7];
+            uint filePosBits = header[9];
+            uint fileSizeBits = header[10];
+            uint compressedSizeBits = header[11];
+            uint flagsBits = header[12];
+            uint md5Bits = header[13];
+            uint betHashStrideBits = header[15];
+            uint betHashBits = header[17];
+            uint extraBits = header[20];
+            uint bitIndexExtra = header[8] != 0
+                ? header[8]
+                : bitIndexMd5 + md5Bits;
+
+            int entryDataBytes = checked((int)((records.Count * (long)totalEntryBits + 7) / 8));
+            int declaredDataBytes = header[0] >= 84 ? checked((int)header[0] - 84) : 0;
+            int hashDataBytes = declaredDataBytes >= entryDataBytes
+                ? declaredDataBytes - entryDataBytes
+                : checked((int)((records.Count * (long)betHashStrideBits + 7) / 8));
+
+            byte[] entryData = new byte[entryDataBytes];
+            byte[] hashData = new byte[hashDataBytes];
+
+            for (int i = 0; i < records.Count; i++)
+            {
+                IIPSArchiveEntryRecord record = records[i];
+                EnsureFits(record.FileOffset, filePosBits, "file offset", record.Index);
+                EnsureFits(record.FileSize, fileSizeBits, "file size", record.Index);
+                EnsureFits(record.CompressedSize, compressedSizeBits, "compressed size", record.Index);
+                EnsureFits(record.Flags, flagsBits, "flags", record.Index);
+                if (extraBits > 0)
+                {
+                    EnsureFits(record.Extra, extraBits, "extra", record.Index);
+                }
+
+                long entryBitOffset = (long)i * totalEntryBits;
+                IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexFilePos, (int)filePosBits, record.FileOffset);
+                IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexFileSize, (int)fileSizeBits, record.FileSize);
+                IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexCompressedSize, (int)compressedSizeBits, record.CompressedSize);
+                IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexFlags, (int)flagsBits, record.Flags);
+
+                if (md5Bits > 0)
+                {
+                    byte[] md5 = record.Md5 ?? new byte[(md5Bits + 7) / 8];
+                    IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexMd5, md5);
+                }
+
+                if (extraBits > 0)
+                {
+                    IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexExtra, (int)extraBits, record.Extra);
+                }
+
+                IIPSArchiveFormat.WriteBits(
+                    hashData,
+                    (long)i * betHashStrideBits,
+                    (int)betHashBits,
+                    record.NameHash & 0x00FFFFFFFFFFFFFFUL);
+            }
+
+            using MemoryStream ms = new MemoryStream();
+            using BinaryWriter writer = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+            for (int i = 0; i < header.Length; i++)
+            {
+                writer.Write(header[i]);
+            }
+            writer.Write(entryData);
+            writer.Write(hashData);
+
+            if (header[0] != 0 && ms.Length != header[0])
+            {
+                throw new InvalidDataException(
+                    $"BET template size mismatch: header={header[0]}, rebuilt={ms.Length}.");
+            }
+
+            return ms.ToArray();
+        }
+
+        return BuildBetDataFallback(records);
+    }
+
+    private static byte[] BuildBetDataFallback(List<IIPSArchiveEntryRecord> records)
     {
         ulong maxFileOffset = records.Count == 0 ? 0 : records.Max(record => record.FileOffset);
         ulong maxFileSize = records.Count == 0 ? 0 : records.Max(record => record.FileSize);
@@ -507,6 +596,21 @@ internal static class IIPSArchiveWriter
         writer.Write(entryData);
         writer.Write(hashData);
         return ms.ToArray();
+    }
+
+    private static void EnsureFits(ulong value, uint bits, string field, int recordIndex)
+    {
+        if (bits >= 64)
+        {
+            return;
+        }
+
+        ulong max = bits == 0 ? 0 : (1UL << (int)bits) - 1;
+        if (value > max)
+        {
+            throw new InvalidDataException(
+                $"BET {field} for record {recordIndex} ({value}) does not fit original {bits}-bit field.");
+        }
     }
 
     private static bool CanPreserveStoredBytes(IIPSArchiveEntryRecord record, IIPSArchiveSaveOptions options)
