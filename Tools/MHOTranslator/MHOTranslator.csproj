@@ -10,4 +10,8 @@
   </PropertyGroup>
 
 
+  <ItemGroup>
+    <ProjectReference Include="../../Arrowgene.MonsterHunterOnline.ClientTools/Arrowgene.MonsterHunterOnline.ClientTools.csproj" />
+  </ItemGroup>
+
 </Project>
