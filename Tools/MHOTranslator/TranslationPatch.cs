@@ -279,6 +279,85 @@ internal static class TranslationPatch
                 {
                     Console.WriteLine($"MD5 last 32:      {Convert.ToHexString(table.Slice(table.Length - 32, 32))}");
                 }
+
+                if (md5PieceSize > 0 && table.Length % 16 == 0)
+                {
+                    int tableEntries = table.Length / 16;
+                    int chunkCount = checked((int)((archiveSize + md5PieceSize - 1) / md5PieceSize));
+                    int directMatches = 0;
+                    int plusOneMatches = 0;
+                    int minusOneMatches = 0;
+
+                    byte[]? firstChunkHash = null;
+                    byte[]? lastChunkHash = null;
+
+                    for (int i = 0; i < chunkCount; i++)
+                    {
+                        ulong chunkOffset = (ulong)i * md5PieceSize;
+                        int chunkLength = checked((int)Math.Min((ulong)md5PieceSize, archiveSize - chunkOffset));
+                        byte[] chunkHash = System.Security.Cryptography.MD5.HashData(
+                            bytes.AsSpan(checked((int)chunkOffset), chunkLength));
+
+                        if (i == 0) firstChunkHash = chunkHash;
+                        if (i == chunkCount - 1) lastChunkHash = chunkHash;
+
+                        if (i < tableEntries &&
+                            table.Slice(i * 16, 16).SequenceEqual(chunkHash))
+                        {
+                            directMatches++;
+                        }
+
+                        if (i + 1 < tableEntries &&
+                            table.Slice((i + 1) * 16, 16).SequenceEqual(chunkHash))
+                        {
+                            plusOneMatches++;
+                        }
+
+                        if (i > 0 && i - 1 < tableEntries &&
+                            table.Slice((i - 1) * 16, 16).SequenceEqual(chunkHash))
+                        {
+                            minusOneMatches++;
+                        }
+                    }
+
+                    Console.WriteLine();
+                    Console.WriteLine("MD5 table mapping test:");
+                    Console.WriteLine($"  table entries:       {tableEntries}");
+                    Console.WriteLine($"  archive chunks:      {chunkCount}");
+                    Console.WriteLine($"  table[i] == chunk[i]:     {directMatches}/{chunkCount}");
+                    Console.WriteLine($"  table[i+1] == chunk[i]:   {plusOneMatches}/{chunkCount}");
+                    Console.WriteLine($"  table[i-1] == chunk[i]:   {minusOneMatches}/{Math.Max(0, chunkCount - 1)}");
+
+                    if (firstChunkHash != null)
+                        Console.WriteLine($"  chunk[0] MD5:        {Convert.ToHexString(firstChunkHash)}");
+                    if (lastChunkHash != null)
+                        Console.WriteLine($"  chunk[last] MD5:     {Convert.ToHexString(lastChunkHash)}");
+
+                    byte[] mainArchiveMd5 = System.Security.Cryptography.MD5.HashData(
+                        bytes.AsSpan(0, checked((int)archiveSize)));
+                    Console.WriteLine($"  main archive MD5:    {Convert.ToHexString(mainArchiveMd5)}");
+
+                    byte[] tableMd5 = System.Security.Cryptography.MD5.HashData(table);
+                    Console.WriteLine($"  MD5 table MD5:       {Convert.ToHexString(tableMd5)}");
+
+                    if (tableEntries > chunkCount)
+                    {
+                        Console.WriteLine($"  extra first entry:   {Convert.ToHexString(table.Slice(0, 16))}");
+                        Console.WriteLine($"  extra last entry:    {Convert.ToHexString(table.Slice((tableEntries - 1) * 16, 16))}");
+
+                        byte[] tableWithoutFirstMd5 = System.Security.Cryptography.MD5.HashData(table.Slice(16));
+                        byte[] tableWithoutLastMd5 = System.Security.Cryptography.MD5.HashData(table.Slice(0, table.Length - 16));
+                        Console.WriteLine($"  MD5(table[1..]):     {Convert.ToHexString(tableWithoutFirstMd5)}");
+                        Console.WriteLine($"  MD5(table[..last]):  {Convert.ToHexString(tableWithoutLastMd5)}");
+
+                        if (bitmapSize != 0 && bitmapPos + bitmapSize <= (ulong)bytes.LongLength)
+                        {
+                            ReadOnlySpan<byte> bitmap2 = bytes.AsSpan(checked((int)bitmapPos), checked((int)bitmapSize));
+                            byte[] bitmapHash = System.Security.Cryptography.MD5.HashData(bitmap2);
+                            Console.WriteLine($"  bitmap MD5:          {Convert.ToHexString(bitmapHash)}");
+                        }
+                    }
+                }
             }
 
             return 0;
