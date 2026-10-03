@@ -25,6 +25,7 @@ internal static class TranslationPatch
             Path.Combine(Environment.CurrentDirectory, "mho-es-patched"));
         bool onlySwf = args.Any(x => x.Equals("--only-swf", StringComparison.OrdinalIgnoreCase));
         string? onlyPath = GetOption(args, "--only-path");
+        string? onlySource = GetOption(args, "--only-source");
         if (!string.IsNullOrWhiteSpace(onlyPath))
         {
             onlyPath = onlyPath.Replace('\\', '/').TrimStart('/');
@@ -46,6 +47,19 @@ internal static class TranslationPatch
         try
         {
             translations = LoadTranslations(catalogPath);
+            if (!string.IsNullOrWhiteSpace(onlySource))
+            {
+                if (!translations.TryGetValue(onlySource, out string? selectedTranslation))
+                {
+                    Console.Error.WriteLine($"Requested --only-source string is not present as status=translate: {onlySource}");
+                    return 3;
+                }
+
+                translations = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [onlySource] = selectedTranslation,
+                };
+            }
         }
         catch (Exception ex)
         {
@@ -61,6 +75,10 @@ internal static class TranslationPatch
         if (!string.IsNullOrWhiteSpace(onlyPath))
         {
             Console.WriteLine($"Only path:    {onlyPath}");
+        }
+        if (!string.IsNullOrWhiteSpace(onlySource))
+        {
+            Console.WriteLine($"Only source:  {onlySource}");
         }
 
         Directory.CreateDirectory(outputRoot);
@@ -818,12 +836,28 @@ internal static class TranslationPatch
         int lastOriginalEnd = firstTagOffset;
         foreach (SwfTag tag in swf.Tags)
         {
+            if (tag.Offset > lastOriginalEnd)
+            {
+                rebuilt.Write(uncompressed, lastOriginalEnd, tag.Offset - lastOriginalEnd);
+            }
+
             byte[] data = tag.Data.ToArray();
             byte[] patchedData = PatchSwfTagData(tag.Code, data, translations, out int tagReplacements);
             replacements += tagReplacements;
 
-            WriteSwfTag(rebuilt, tag.Code, patchedData);
-            lastOriginalEnd = tag.Offset + tag.HeaderLength + checked((int)tag.Length);
+            int originalTagLength = tag.HeaderLength + checked((int)tag.Length);
+            if (tagReplacements == 0)
+            {
+                // Keep untouched tags byte-for-byte, including their original short/long
+                // header representation. Old Scaleform builds can be stricter than our parser.
+                rebuilt.Write(uncompressed, tag.Offset, originalTagLength);
+            }
+            else
+            {
+                WriteSwfTag(rebuilt, tag.Code, patchedData);
+            }
+
+            lastOriginalEnd = tag.Offset + originalTagLength;
         }
 
         if (lastOriginalEnd < uncompressed.Length)

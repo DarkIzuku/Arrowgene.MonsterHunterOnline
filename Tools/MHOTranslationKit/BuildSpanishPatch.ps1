@@ -11,7 +11,9 @@ param(
 
     [switch]$UiOnly,
 
-    [switch]$UiSmoke
+    [switch]$UiSmoke,
+
+    [string]$UiSmokeSource = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,7 +67,11 @@ Write-Host ""
 
 Write-Host "[1/2] Applying approved Spanish translations..."
 if ($UiSmoke) {
-    & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf"
+    if ([string]::IsNullOrWhiteSpace($UiSmokeSource)) {
+        & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf"
+    } else {
+        & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf" --only-source $UiSmokeSource
+    }
 } elseif ($UiOnly) {
     & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf
 } else {
