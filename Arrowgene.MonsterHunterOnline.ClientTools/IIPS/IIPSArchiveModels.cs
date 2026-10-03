@@ -39,6 +39,8 @@ public sealed class IIPSArchiveMetadata
     public uint RawChunkSize { get; internal set; }
     internal byte[] Md5PatchBaseTag { get; set; } = new byte[16];
     internal byte[] Md5PatchedTag { get; set; } = new byte[16];
+    internal byte[] OriginalHetSection { get; set; } = Array.Empty<byte>();
+    internal uint[] OriginalBetHeader { get; set; } = Array.Empty<uint>();
 }
 
 public sealed class IIPSArchiveOpenOptions
