@@ -81,6 +81,7 @@ static int ExtractIfsCommand(string[] args)
             {
                 VerifyChecksums = verifyChecksums,
                 LoadListFile = loadListFile,
+                FileShare = FileShare.ReadWrite | FileShare.Delete,
             });
 
         Console.WriteLine($"FormatVersion:   {archive.Metadata.FormatVersion}");
