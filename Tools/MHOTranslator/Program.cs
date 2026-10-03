@@ -11,6 +11,8 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
 {
     "extract-ifs" => ExtractIfsCommand(args.Skip(1).ToArray()),
     "scan" => ScanCommand(args.Skip(1).ToArray()),
+    "apply" => TranslationPatch.ApplyCommand(args.Skip(1).ToArray()),
+    "build-ifs" => TranslationPatch.BuildIfsCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
     _ => UnknownCommand(args[0])
@@ -30,6 +32,15 @@ Commands:
   scan <input-dir> [--output <csv>] [--all] [--max-mb <n>]
       Scans extracted game/patch files for Chinese/Japanese text and exports
       a translation-ready CSV.
+
+  apply <input-dir> <catalog.csv> [--out <patched-dir>]
+      Applies only catalog rows marked status=translate. DAT files are
+      decrypted/re-encrypted with verification; supported SWF strings are
+      rebuilt structurally instead of binary-patched.
+
+  build-ifs <base.ifs> <patched-dir> [--out <output.ifs>]
+      Replaces translated resources in a copy of the base nIFS archive,
+      saves it, reopens it and verifies modified entries byte-for-byte.
 
   compare <original-dir> <patched-dir> [--output <csv>]
       Compares two extracted trees and reports which files the existing
