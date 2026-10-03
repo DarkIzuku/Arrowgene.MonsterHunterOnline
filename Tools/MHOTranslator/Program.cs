@@ -1,3 +1,4 @@
+using Arrowgene.MonsterHunterOnline.ClientTools.IIPS;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -5,6 +6,7 @@ Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
 return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
 {
+    "extract-ifs" => ExtractIfsCommand(args.Skip(1).ToArray()),
     "scan" => ScanCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
@@ -18,6 +20,10 @@ MHOTranslator - helper tooling for Monster Hunter Online fan translation work.
 
 Commands:
 
+  extract-ifs <archive.ifs> [--out <dir>] [--no-checksums] [--no-listfile]
+      Opens MHO nIFS archives with Arrowgene's managed IIPS implementation and
+      extracts entries without using Tencent IFS2.dll.
+
   scan <input-dir> [--output <csv>] [--all] [--max-mb <n>]
       Scans extracted game/patch files for Chinese/Japanese text and exports
       a translation-ready CSV.
@@ -28,6 +34,7 @@ Commands:
 
 Examples:
 
+  MHOTranslator.exe extract-ifs "D:\\MHO\\eng_patch.ifs" --out "D:\\MHO\\eng_patch_extracted"
   MHOTranslator.exe scan "D:\\MHO\\extracted"
   MHOTranslator.exe scan "D:\\MHO\\extracted" --all --output "D:\\MHO\\cjk.csv"
   MHOTranslator.exe compare "D:\\MHO\\original" "D:\\MHO\\english" --output patch-diff.csv
@@ -39,6 +46,128 @@ static int UnknownCommand(string command)
 {
     Console.Error.WriteLine($"Unknown command: {command}");
     return ShowHelp();
+}
+
+static int ExtractIfsCommand(string[] args)
+{
+    if (args.Length < 1)
+    {
+        Console.Error.WriteLine("extract-ifs requires <archive.ifs>.");
+        return 2;
+    }
+
+    string archivePath = Path.GetFullPath(args[0]);
+    if (!File.Exists(archivePath))
+    {
+        Console.Error.WriteLine($"Archive does not exist: {archivePath}");
+        return 2;
+    }
+
+    string output = GetOption(args, "--out")
+                    ?? Path.Combine(
+                        Path.GetDirectoryName(archivePath)!,
+                        Path.GetFileNameWithoutExtension(archivePath) + "_extracted");
+    output = Path.GetFullPath(output);
+
+    bool verifyChecksums = !args.Any(x => x.Equals("--no-checksums", StringComparison.OrdinalIgnoreCase));
+    bool loadListFile = !args.Any(x => x.Equals("--no-listfile", StringComparison.OrdinalIgnoreCase));
+
+    try
+    {
+        Console.WriteLine($"Opening nIFS archive: {archivePath}");
+        using IIPSArchive archive = IIPSArchive.Open(
+            archivePath,
+            new IIPSArchiveOpenOptions
+            {
+                VerifyChecksums = verifyChecksums,
+                LoadListFile = loadListFile,
+            });
+
+        Console.WriteLine($"FormatVersion:   {archive.Metadata.FormatVersion}");
+        Console.WriteLine($"SectorSize:      {archive.Metadata.SectorSize}");
+        Console.WriteLine($"Header MD5:      {archive.Metadata.HeaderMd5}");
+        Console.WriteLine($"HET MD5:         {archive.Metadata.HetMd5}");
+        Console.WriteLine($"BET MD5:         {archive.Metadata.BetMd5}");
+        Console.WriteLine($"Entries:         {archive.Entries.Count}");
+        Console.WriteLine($"Resolved paths:  {archive.ArchivePaths.Count}");
+
+        Directory.CreateDirectory(output);
+        string unnamed = Path.Combine(output, "_unnamed");
+        int extracted = 0;
+        int failed = 0;
+        int skipped = 0;
+
+        foreach (IIPSArchiveEntry entry in archive.Entries)
+        {
+            if (!entry.Exists || entry.Length == 0 || entry.IsDirectory)
+            {
+                skipped++;
+                continue;
+            }
+
+            string target;
+            if (!string.IsNullOrWhiteSpace(entry.ArchivePath))
+            {
+                string normalized = entry.ArchivePath!
+                    .Replace('\\', Path.DirectorySeparatorChar)
+                    .Replace('/', Path.DirectorySeparatorChar);
+
+                string fullTarget = Path.GetFullPath(Path.Combine(output, normalized));
+                string outputRoot = output.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                if (!fullTarget.StartsWith(outputRoot, StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.Error.WriteLine($"[SKIP] Unsafe archive path: {entry.ArchivePath}");
+                    failed++;
+                    continue;
+                }
+
+                target = fullTarget;
+            }
+            else
+            {
+                Directory.CreateDirectory(unnamed);
+                target = Path.Combine(unnamed, $"{entry.Index:D6}.bin");
+            }
+
+            try
+            {
+                string? directory = Path.GetDirectoryName(target);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                File.WriteAllBytes(target, entry.ReadAllBytes());
+                extracted++;
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                Console.Error.WriteLine($"[FAIL] entry {entry.Index} {entry.ArchivePath ?? "(unnamed)"}: {ex.Message}");
+            }
+
+            if ((extracted + failed) % 100 == 0)
+            {
+                Console.WriteLine($"Progress: extracted={extracted} failed={failed} skipped={skipped}");
+            }
+        }
+
+        string listFile = Path.Combine(output, "_mho_listfile.txt");
+        File.WriteAllLines(listFile, archive.ArchivePaths.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), new UTF8Encoding(false));
+
+        Console.WriteLine($"Output:          {output}");
+        Console.WriteLine($"Extracted:       {extracted}");
+        Console.WriteLine($"Failed:          {failed}");
+        Console.WriteLine($"Skipped:         {skipped}");
+        Console.WriteLine($"Path list:       {listFile}");
+
+        return failed == 0 ? 0 : 10;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"IIPS open/extract failed: {ex}");
+        return 7;
+    }
 }
 
 static int ScanCommand(string[] args)
