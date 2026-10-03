@@ -157,6 +157,139 @@ internal static class TranslationPatch
         return failures == 0 ? 0 : 10;
     }
 
+    public static int InspectIfsCommand(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("inspect-ifs requires <archive.ifs>.");
+            return 2;
+        }
+
+        string path = Path.GetFullPath(args[0]);
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"Archive does not exist: {path}");
+            return 2;
+        }
+
+        try
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            if (bytes.Length < 0xAC)
+            {
+                Console.Error.WriteLine("Archive is smaller than the 0xAC nIFS header.");
+                return 3;
+            }
+
+            uint magic = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0x00, 4));
+            uint headerSize = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0x04, 4));
+            ushort formatVersion = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(0x08, 2));
+            ushort sectorShift = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(0x0A, 2));
+            ulong archiveSize = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0x0C, 8));
+            ulong betPos = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0x14, 8));
+            ulong hetPos = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0x1C, 8));
+            ulong md5TablePos = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0x24, 8));
+            ulong bitmapPos = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0x2C, 8));
+            ulong hetSize = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0x34, 8));
+            ulong betSize = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0x3C, 8));
+            ulong md5TableSize = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0x44, 8));
+            ulong bitmapSize = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(0x4C, 8));
+            uint md5PieceSize = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0x54, 4));
+            uint rawChunkSize = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0x58, 4));
+
+            string rawHash0 = Convert.ToHexString(bytes.AsSpan(0x5C, 16)).ToLowerInvariant();
+            string rawHash1 = Convert.ToHexString(bytes.AsSpan(0x6C, 16)).ToLowerInvariant();
+            string betHash = Convert.ToHexString(bytes.AsSpan(0x7C, 16)).ToLowerInvariant();
+            string hetHash = Convert.ToHexString(bytes.AsSpan(0x8C, 16)).ToLowerInvariant();
+            string headerHash = Convert.ToHexString(bytes.AsSpan(0x9C, 16)).ToLowerInvariant();
+
+            string Calc(ulong offset, ulong length)
+            {
+                if (length == 0)
+                    return "(empty)";
+                if (offset > (ulong)bytes.LongLength || length > (ulong)bytes.LongLength - offset)
+                    return "(out-of-range)";
+                return Convert.ToHexString(
+                    System.Security.Cryptography.MD5.HashData(
+                        bytes.AsSpan(checked((int)offset), checked((int)length))))
+                    .ToLowerInvariant();
+            }
+
+            string computedHeader = Convert.ToHexString(
+                System.Security.Cryptography.MD5.HashData(bytes.AsSpan(0, 0x9C)))
+                .ToLowerInvariant();
+
+            Console.WriteLine($"Path:             {path}");
+            Console.WriteLine($"File length:      {bytes.LongLength}");
+            Console.WriteLine($"Magic:            0x{magic:X8}");
+            Console.WriteLine($"Header size:      0x{headerSize:X} ({headerSize})");
+            Console.WriteLine($"Format version:   {formatVersion}");
+            Console.WriteLine($"Sector shift:     {sectorShift}");
+            Console.WriteLine($"Archive size:     {archiveSize}");
+            Console.WriteLine($"HET:              pos=0x{hetPos:X} size={hetSize}");
+            Console.WriteLine($"BET:              pos=0x{betPos:X} size={betSize}");
+            Console.WriteLine($"MD5 table:        pos=0x{md5TablePos:X} size={md5TableSize}");
+            Console.WriteLine($"Bitmap:           pos=0x{bitmapPos:X} size={bitmapSize}");
+            Console.WriteLine($"MD5 piece size:   {md5PieceSize}");
+            Console.WriteLine($"Raw chunk size:   {rawChunkSize}");
+            Console.WriteLine();
+            Console.WriteLine("Stored 0xAC header hashes:");
+            Console.WriteLine($"  hash[0] @5C:    {rawHash0}");
+            Console.WriteLine($"  hash[1] @6C:    {rawHash1}");
+            Console.WriteLine($"  BET     @7C:    {betHash}");
+            Console.WriteLine($"  HET     @8C:    {hetHash}");
+            Console.WriteLine($"  Header  @9C:    {headerHash}");
+            Console.WriteLine();
+            Console.WriteLine("Recomputed raw-region MD5:");
+            Console.WriteLine($"  MD5 table:      {Calc(md5TablePos, md5TableSize)}");
+            Console.WriteLine($"  Bitmap:         {Calc(bitmapPos, bitmapSize)}");
+            Console.WriteLine($"  BET:            {Calc(betPos, betSize)}");
+            Console.WriteLine($"  HET:            {Calc(hetPos, hetSize)}");
+            Console.WriteLine($"  Header[0..9B]:  {computedHeader}");
+
+            if (md5PieceSize != 0)
+            {
+                ulong chunkCount = (archiveSize + md5PieceSize - 1) / md5PieceSize;
+                Console.WriteLine();
+                Console.WriteLine($"Archive chunks:   {chunkCount}");
+                Console.WriteLine($"chunks*16:        {chunkCount * 16}");
+                Console.WriteLine($"(chunks+1)*16:    {(chunkCount + 1) * 16}");
+            }
+
+            if (bitmapSize != 0 && bitmapPos + bitmapSize <= (ulong)bytes.LongLength)
+            {
+                ReadOnlySpan<byte> bitmap = bytes.AsSpan(checked((int)bitmapPos), checked((int)bitmapSize));
+                long nonZero = 0;
+                long ff = 0;
+                foreach (byte b in bitmap)
+                {
+                    if (b != 0) nonZero++;
+                    if (b == 0xFF) ff++;
+                }
+                Console.WriteLine($"Bitmap nonzero:   {nonZero}/{bitmap.Length}");
+                Console.WriteLine($"Bitmap 0xFF:      {ff}/{bitmap.Length}");
+                Console.WriteLine($"Bitmap first 32:  {Convert.ToHexString(bitmap.Slice(0, Math.Min(32, bitmap.Length)))}");
+            }
+
+            if (md5TableSize != 0 && md5TablePos + md5TableSize <= (ulong)bytes.LongLength)
+            {
+                ReadOnlySpan<byte> table = bytes.AsSpan(checked((int)md5TablePos), checked((int)md5TableSize));
+                Console.WriteLine($"MD5 first 32:     {Convert.ToHexString(table.Slice(0, Math.Min(32, table.Length)))}");
+                if (table.Length >= 32)
+                {
+                    Console.WriteLine($"MD5 last 32:      {Convert.ToHexString(table.Slice(table.Length - 32, 32))}");
+                }
+            }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"IFS inspection failed: {ex}");
+            return 7;
+        }
+    }
+
     public static int CloneIfsCommand(string[] args)
     {
         if (args.Length < 1)
