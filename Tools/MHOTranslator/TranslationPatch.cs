@@ -124,7 +124,10 @@ internal static class TranslationPatch
 
                 modifiedFiles++;
                 replacements += fileReplacements;
-                Console.WriteLine($"[PATCH] {relative} ({fileReplacements} replacements)");
+                string sizeInfo = extension == ".swf"
+                    ? $", bytes {original.Length} -> {patched.Length} ({patched.Length - original.Length:+#;-#;0})"
+                    : string.Empty;
+                Console.WriteLine($"[PATCH] {relative} ({fileReplacements} replacements{sizeInfo})");
             }
             catch (Exception ex)
             {
@@ -858,7 +861,7 @@ internal static class TranslationPatch
         compressed.WriteByte(rebuiltFws[3]);
         compressed.Write(rebuiltFws, 4, 4);
 
-        using (ZLibStream zlib = new(compressed, CompressionLevel.Optimal, leaveOpen: true))
+        using (ZLibStream zlib = new(compressed, CompressionLevel.SmallestSize, leaveOpen: true))
         {
             zlib.Write(rebuiltFws, 8, rebuiltFws.Length - 8);
         }
