@@ -113,6 +113,60 @@ internal static class IIPSArchiveWriter
         }
     }
 
+    private static void PadToAlignment(FileStream output, uint alignment)
+    {
+        if (alignment == 0)
+        {
+            return;
+        }
+
+        long remainder = output.Position % alignment;
+        if (remainder == 0)
+        {
+            return;
+        }
+
+        long padding = alignment - remainder;
+        byte[] zeroes = new byte[8192];
+        while (padding > 0)
+        {
+            int count = (int)Math.Min(padding, zeroes.Length);
+            output.Write(zeroes, 0, count);
+            padding -= count;
+        }
+    }
+
+    private static byte[] BuildRawChunkMd5Table(FileStream output, ulong archiveSize, uint pieceSize)
+    {
+        ulong chunkCount = archiveSize / pieceSize;
+        using MemoryStream table = new MemoryStream(checked((int)((chunkCount + 1) * 16UL)));
+        byte[] buffer = new byte[pieceSize];
+
+        for (ulong chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++)
+        {
+            output.Position = checked((long)(chunkIndex * pieceSize));
+            int totalRead = 0;
+            while (totalRead < buffer.Length)
+            {
+                int read = output.Read(buffer, totalRead, buffer.Length - totalRead);
+                if (read == 0)
+                {
+                    throw new EndOfStreamException($"Unexpected EOF while hashing raw chunk {chunkIndex}.");
+                }
+
+                totalRead += read;
+            }
+
+            byte[] digest = MD5.HashData(buffer);
+            table.Write(digest, 0, digest.Length);
+        }
+
+        byte[] chunkHashes = table.ToArray();
+        byte[] tableDigest = MD5.HashData(chunkHashes);
+        table.Write(tableDigest, 0, tableDigest.Length);
+        return table.ToArray();
+    }
+
     private static List<IIPSArchiveEntryRecord> PrepareRecords(IIPSArchive archive, IIPSArchiveSaveOptions options)
     {
         List<IIPSArchiveEntryRecord> records = archive.Records.Select(CloneRecord).ToList();
