@@ -162,7 +162,10 @@ internal static class IIPSArchiveWriter
 
         // This mode is intentionally replacement-only. It preserves every original
         // file offset, HET/BET location, padding byte and integrity-region location.
-        if (records.Any(record => record.FileOffset == 0 && record.Index != 0))
+        if (records.Any(record =>
+                record.SourceKind == IIPSArchiveEntrySourceKind.Memory &&
+                record.FileOffset == 0 &&
+                record.Index != 0))
         {
             throw new InvalidOperationException("Original-layout save cannot add new archive entries.");
         }
