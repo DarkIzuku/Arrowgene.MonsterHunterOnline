@@ -58,6 +58,7 @@ public sealed class IIPSArchiveCreationOptions
 
 public sealed class IIPSArchiveSaveOptions
 {
+    public bool PreserveOriginalLayout { get; set; }
     public bool IncludeListFile { get; set; } = true;
     public bool PreserveUnchangedEntries { get; set; } = true;
 }
