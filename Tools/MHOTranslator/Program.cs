@@ -1,4 +1,6 @@
 using Arrowgene.MonsterHunterOnline.ClientTools.IIPS;
+using Arrowgene.MonsterHunterOnline.ClientTools.Flash;
+using Arrowgene.MonsterHunterOnline.ClientTools.Dat;
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
@@ -248,10 +250,45 @@ static int ScanCommand(string[] args)
 
         string relative = Path.GetRelativePath(root, file).Replace('\\', '/');
 
-        if (TryDecodeSwf(bytes, out byte[] swfPayload, out string swfKind))
+        if (SwfFile.IsSwf(file))
         {
-            swfFiles++;
-            AddBinaryCjkHits(rows, relative, swfPayload, $"swf-{swfKind}");
+            try
+            {
+                swfFiles++;
+                ScanSwfStructured(rows, relative, file);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[SWF WARN] {relative}: {ex.Message}");
+            }
+            continue;
+        }
+
+        if (info.Extension.Equals(".dat", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                DatFile dat = new();
+                dat.Open(bytes);
+                string content = dat.Content ?? "";
+                if (ContainsCjk(content))
+                {
+                    textFiles++;
+                    string[] lines = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        string source = NormalizeCandidate(lines[i]);
+                        if (source.Length == 0 || !ContainsCjk(source))
+                            continue;
+
+                        rows.Add(new ScanRow(relative, $"dat-line:{i + 1}", "dat-decrypted", "utf-8", source, 1, "", ""));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[DAT WARN] {relative}: {ex.Message}");
+            }
             continue;
         }
 
@@ -364,6 +401,181 @@ static int ScanCommand(string[] args)
     return 0;
 }
 
+static void ScanSwfStructured(List<ScanRow> rows, string relative, string file)
+{
+    SwfFile swf = SwfFile.Open(file);
+
+    foreach (SwfTag tag in swf.Tags)
+    {
+        if (tag.Code == 82) // DoABC
+        {
+            ScanDoAbcTag(rows, relative, tag);
+            continue;
+        }
+
+        // These tags contain explicit UTF-8 strings in the SWF format.
+        if (tag.Code is 43 or 56 or 76 or 77 or 88)
+        {
+            AddNullTerminatedUtf8Strings(rows, relative, tag.Data.Span, $"swf-{tag.Name}", $"tag:{tag.Index}");
+        }
+    }
+}
+
+static void ScanDoAbcTag(List<ScanRow> rows, string relative, SwfTag tag)
+{
+    ReadOnlySpan<byte> data = tag.Data.Span;
+    if (data.Length < 5)
+        return;
+
+    int offset = 4; // DoABC flags
+    string abcName = ReadNullTerminatedUtf8(data, ref offset);
+    if (offset >= data.Length)
+        return;
+
+    ReadOnlySpan<byte> abc = data.Slice(offset);
+    if (abc.Length < 4)
+        return;
+
+    int p = 4; // minor_version + major_version
+
+    // int pool
+    uint intCount = ReadU30(abc, ref p);
+    for (uint i = 1; i < intCount; i++) SkipU32(abc, ref p);
+
+    // uint pool
+    uint uintCount = ReadU30(abc, ref p);
+    for (uint i = 1; i < uintCount; i++) SkipU32(abc, ref p);
+
+    // double pool
+    uint doubleCount = ReadU30(abc, ref p);
+    if (doubleCount > 0)
+    {
+        long bytes = (long)(doubleCount - 1) * 8;
+        if (bytes > abc.Length - p)
+            throw new InvalidDataException("ABC double pool exceeds tag length.");
+        p += (int)bytes;
+    }
+
+    // string pool
+    uint stringCount = ReadU30(abc, ref p);
+    for (uint i = 1; i < stringCount; i++)
+    {
+        uint len = ReadU30(abc, ref p);
+        if (len > (uint)(abc.Length - p))
+            throw new InvalidDataException("ABC string exceeds tag length.");
+
+        ReadOnlySpan<byte> raw = abc.Slice(p, checked((int)len));
+        p += checked((int)len);
+
+        string value;
+        try
+        {
+            value = new UTF8Encoding(false, true).GetString(raw);
+        }
+        catch (DecoderFallbackException)
+        {
+            continue;
+        }
+
+        value = NormalizeCandidate(value);
+        if (value.Length == 0 || value.Length > 1024 || !ContainsCjk(value))
+            continue;
+
+        rows.Add(new ScanRow(
+            relative,
+            $"tag:{tag.Index}/abc:{abcName}/str:{i}",
+            "swf-abc",
+            "utf-8",
+            value,
+            1,
+            "",
+            ""));
+    }
+}
+
+static uint ReadU30(ReadOnlySpan<byte> data, ref int offset)
+{
+    uint value = 0;
+    int shift = 0;
+
+    for (int i = 0; i < 5; i++)
+    {
+        if (offset >= data.Length)
+            throw new EndOfStreamException("Unexpected EOF in ABC U30.");
+
+        byte b = data[offset++];
+        value |= (uint)(b & 0x7F) << shift;
+        if ((b & 0x80) == 0)
+            return value & 0x3FFFFFFF;
+
+        shift += 7;
+    }
+
+    return value & 0x3FFFFFFF;
+}
+
+static void SkipU32(ReadOnlySpan<byte> data, ref int offset)
+{
+    for (int i = 0; i < 5; i++)
+    {
+        if (offset >= data.Length)
+            throw new EndOfStreamException("Unexpected EOF in ABC integer pool.");
+
+        byte b = data[offset++];
+        if ((b & 0x80) == 0)
+            return;
+    }
+}
+
+static void AddNullTerminatedUtf8Strings(
+    List<ScanRow> rows,
+    string relative,
+    ReadOnlySpan<byte> data,
+    string sourceKind,
+    string locationPrefix)
+{
+    int start = 0;
+    int index = 0;
+
+    while (start < data.Length)
+    {
+        int end = start;
+        while (end < data.Length && data[end] != 0)
+            end++;
+
+        if (end > start)
+        {
+            try
+            {
+                string value = new UTF8Encoding(false, true).GetString(data.Slice(start, end - start));
+                value = NormalizeCandidate(value);
+                if (value.Length > 0 && value.Length <= 1024 && ContainsCjk(value) && LooksLikeUsefulBinaryString(value))
+                {
+                    rows.Add(new ScanRow(relative, $"{locationPrefix}/str:{index}", sourceKind, "utf-8", value, 1, "", ""));
+                }
+            }
+            catch (DecoderFallbackException)
+            {
+            }
+        }
+
+        index++;
+        start = end + 1;
+    }
+}
+
+static string ReadNullTerminatedUtf8(ReadOnlySpan<byte> data, ref int offset)
+{
+    int start = offset;
+    while (offset < data.Length && data[offset] != 0)
+        offset++;
+
+    string result = Encoding.UTF8.GetString(data.Slice(start, offset - start));
+    if (offset < data.Length)
+        offset++;
+    return result;
+}
+
 static bool TryDecodeSwf(byte[] bytes, out byte[] payload, out string kind)
 {
     payload = Array.Empty<byte>();
@@ -421,11 +633,9 @@ static bool TryDecodeSwf(byte[] bytes, out byte[] payload, out string kind)
 
 static void AddBinaryCjkHits(List<ScanRow> rows, string relative, byte[] bytes, string sourceKind)
 {
-    AddDecodedBinaryHits(rows, relative, bytes, sourceKind, Encoding.UTF8, "utf-8");
-
-    // Some old UI resources contain UTF-16LE strings embedded in binary data.
-    // Only keep reasonably printable candidates to avoid random-byte noise.
-    AddDecodedBinaryHits(rows, relative, bytes, sourceKind, Encoding.Unicode, "utf-16le");
+    // Generic binary fallback is deliberately UTF-8 only. Treating arbitrary
+    // byte pairs as UTF-16 produced millions of false CJK positives.
+    AddDecodedBinaryHits(rows, relative, bytes, sourceKind, new UTF8Encoding(false, true), "utf-8");
 }
 
 static void AddDecodedBinaryHits(
@@ -440,6 +650,10 @@ static void AddDecodedBinaryHits(
     try
     {
         decoded = encoding.GetString(bytes);
+    }
+    catch (DecoderFallbackException)
+    {
+        return;
     }
     catch
     {
