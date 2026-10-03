@@ -37,11 +37,18 @@ internal static class IIPSArchiveWriter
                     record.CompressedSize = (ulong)storedData.Length;
                 }
 
-                byte[] hetSection = IIPSArchiveSerialization.BuildSection(IIPSArchiveFormat.HetSignature, BuildHetData(records));
+                byte[] hetSection =
+                    archive.Metadata.OriginalHetSection.Length > 0 &&
+                    archive.Metadata.OriginalBetHeader.Length >= 2 &&
+                    archive.Metadata.OriginalBetHeader[1] == (uint)records.Count
+                        ? (byte[])archive.Metadata.OriginalHetSection.Clone()
+                        : IIPSArchiveSerialization.BuildSection(IIPSArchiveFormat.HetSignature, BuildHetData(records));
                 ulong hetOffset = (ulong)output.Position;
                 output.Write(hetSection, 0, hetSection.Length);
 
-                byte[] betSection = IIPSArchiveSerialization.BuildSection(IIPSArchiveFormat.BetSignature, BuildBetData(records));
+                byte[] betSection = IIPSArchiveSerialization.BuildSection(
+                    IIPSArchiveFormat.BetSignature,
+                    BuildBetData(records, archive.Metadata.OriginalBetHeader));
                 ulong betOffset = (ulong)output.Position;
                 output.Write(betSection, 0, betSection.Length);
 
@@ -254,7 +261,6 @@ internal static class IIPSArchiveWriter
         record.NameHash = EnsureNameHash(record);
         record.FileSize = (ulong)content.Length;
         record.Md5 = MD5.HashData(content);
-        record.Extra = 0;
 
         if (content.Length == 0)
         {
