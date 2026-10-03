@@ -230,6 +230,55 @@ static HANDLE OpenArchiveSafe(const std::string& archivePath, DWORD flags)
 #endif
 }
 
+static bool InstallProtectedArchiveBypass(HMODULE module)
+{
+#if defined(_M_IX86)
+    constexpr uintptr_t GateRva = 0x17A52;
+    constexpr uintptr_t ConditionalJumpRva = 0x17A5B;
+
+    static const uint8_t expected[] = {
+        0x8B, 0xF7,
+        0xE8, 0xE7, 0xE3, 0x00, 0x00,
+        0x84, 0xC0,
+        0x74, 0x0D,
+        0xC7, 0x44, 0x24, 0x10,
+        0x08, 0x94, 0x35, 0x77
+    };
+
+    auto base = reinterpret_cast<uint8_t*>(module);
+    auto gate = base + GateRva;
+
+    if (std::memcmp(gate, expected, sizeof(expected)) != 0)
+    {
+        std::cerr << "[IFS2] Protected-archive gate signature mismatch; "
+                     "refusing to patch unknown code.\n";
+        return false;
+    }
+
+    auto jump = base + ConditionalJumpRva;
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(jump, 1, PAGE_EXECUTE_READWRITE, &oldProtect))
+    {
+        std::cerr << "[IFS2] VirtualProtect failed for protected-archive gate. Win32="
+                  << GetLastError() << "\n";
+        return false;
+    }
+
+    *jump = 0xEB;
+    FlushInstructionCache(GetCurrentProcess(), jump, 1);
+
+    DWORD ignored = 0;
+    VirtualProtect(jump, 1, oldProtect, &ignored);
+
+    std::cout << "[IFS2] Installed verified in-memory bypass for custom error "
+                 "2000000008 at RVA 0x"
+              << std::hex << ConditionalJumpRva << std::dec << "\n";
+    return true;
+#else
+    return false;
+#endif
+}
+
 static void PrintPeDiagnostics(HMODULE module)
 {
     auto base = reinterpret_cast<const uint8_t*>(module);
