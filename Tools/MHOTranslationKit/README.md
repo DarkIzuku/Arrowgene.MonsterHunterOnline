@@ -1,47 +1,53 @@
 # MHO Translation Kit
 
-This kit combines:
+This kit now uses Arrowgene's built-in managed Monster Hunter Online IIPS/nIFS
+implementation. Tencent's `IFS2.dll` is **not required**.
 
-- **MHOIFSExtractor.exe** — Win32/x86 helper that asks the MHO client's own
-  `IFS2.dll` to read `(listfile)` and extract an IFS archive with its real paths.
-- **MHOTranslator.exe** — inventories Chinese/Japanese text and exports CSV.
-- **ExtractAndScan.ps1** — runs the complete audit pipeline.
+## Why this is better
 
-Tencent/Capcom files are not included. Use your own client.
+The server repository already contains a native C# reader/writer for MHO's
+`nifs` format under:
 
-## Your English patch
+    Arrowgene.MonsterHunterOnline.ClientTools/IIPS/
 
-The MHO Revival patch supplied for this project ends the IIPS load list with:
+It understands the MHO-specific 0xAC header, encrypted HET/BET sections,
+name hashes, archive entry flags, compression/encryption and the embedded
+`(listfile)`.
+
+That is much safer and more reproducible than patching a 2014 Tencent DLL in
+memory.
+
+## One-command audit
+
+Open PowerShell in the extracted kit directory and run:
+
+    powershell -ExecutionPolicy Bypass -File .\ExtractAndScan.ps1 -PatchIfs "D:\Juegos\Monster Hunter Online\Cliente\Bin\Client\IIPS\iipsdownload\eng_patch.ifs" -OutputDir "D:\MHO-Translation\eng_patch_extracted"
+
+The script performs:
+
+1. Managed nIFS open and HET/BET parsing.
+2. Embedded `(listfile)` lookup.
+3. Extraction with resolved original paths where available.
+4. CJK scan of the extracted tree.
+5. Creation of `remaining-cjk.csv`.
+
+Useful outputs:
+
+    eng_patch_extracted\_mho_listfile.txt
+    eng_patch_extracted\remaining-cjk.csv
+
+## English patch being audited
+
+The supplied IIPS list ends with:
 
     [subversion]
     version=2.0.11.641
     patch=eng_patch.ifs
 
-That means `eng_patch.ifs` is loaded as a final override after the stock MHO
-2.0.11.641 patch chain.
+So `eng_patch.ifs` is loaded as the final override after the stock patch chain.
 
-## One-command audit
+## Important
 
-Open PowerShell in this kit directory:
-
-    .\ExtractAndScan.ps1 `
-      -PatchIfs "D:\Juegos\Monster Hunter Online\Cliente\Bin\Client\IIPS\iipsdownload\eng_patch.ifs" `
-      -IFS2 "D:\Juegos\Monster Hunter Online\Cliente\Bin\Client\Bin32\IFS2.dll"
-
-Optional:
-
-    -OutputDir "D:\MHO-Translation\eng_patch_extracted"
-    -Csv "D:\MHO-Translation\remaining-cjk.csv"
-
-The script first tests the archive by reading its internal `(listfile)`. It
-will not attempt extraction if that compatibility check fails.
-
-## What to send back for analysis
-
-After a successful run, the most useful files are:
-
-1. `_mho_listfile.txt`
-2. `remaining-cjk.csv`
-
-For deeper format work, a ZIP of the extracted tree is useful too, but do not
-publish original game assets in the GitHub repository.
+Do not publish original Tencent/Capcom assets in the repository. Keep the repo
+limited to tooling, translation catalogs, metadata and patches that require the
+user's own client.
