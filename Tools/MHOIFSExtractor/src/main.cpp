@@ -279,6 +279,67 @@ static bool InstallProtectedArchiveBypass(HMODULE module)
 #endif
 }
 
+static bool InstallProtectedFileTableCompatibility(HMODULE module)
+{
+#if defined(_M_IX86)
+    // Older IFS2/StormLib builds abort archive open when ANY MPQ_FILE_EXISTS
+    // entry has an offset/size beyond EOF. Protected archives commonly contain
+    // fake/decoy entries. Modern StormLib tolerates such protected tables and
+    // validates the actual file when it is opened.
+    //
+    // Verified against the user's exact IFS2.dll profile.
+    constexpr uintptr_t ValidationLoopRva = 0x17A7F;
+    constexpr uintptr_t ValidationDoneRva = 0x17AF2;
+
+    static const uint8_t expected[] = {
+        0x8B, 0x4F, 0x64,       // mov ecx,[edi+64]
+        0x8B, 0x49, 0x24        // mov ecx,[ecx+24]
+    };
+
+    auto base = reinterpret_cast<uint8_t*>(module);
+    auto site = base + ValidationLoopRva;
+
+    if (std::memcmp(site, expected, sizeof(expected)) != 0)
+    {
+        std::cerr << "[IFS2] File-table validation signature mismatch; "
+                     "refusing compatibility patch.\n";
+        return false;
+    }
+
+    int32_t rel = static_cast<int32_t>(
+        ValidationDoneRva - (ValidationLoopRva + 5));
+
+    uint8_t patch[5] = {
+        0xE9,
+        static_cast<uint8_t>(rel & 0xFF),
+        static_cast<uint8_t>((rel >> 8) & 0xFF),
+        static_cast<uint8_t>((rel >> 16) & 0xFF),
+        static_cast<uint8_t>((rel >> 24) & 0xFF)
+    };
+
+    DWORD oldProtect = 0;
+    if (!VirtualProtect(site, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect))
+    {
+        std::cerr << "[IFS2] VirtualProtect failed for protected file-table compatibility. Win32="
+                  << GetLastError() << "\n";
+        return false;
+    }
+
+    std::memcpy(site, patch, sizeof(patch));
+    FlushInstructionCache(GetCurrentProcess(), site, sizeof(patch));
+
+    DWORD ignored = 0;
+    VirtualProtect(site, sizeof(patch), oldProtect, &ignored);
+
+    std::cout << "[IFS2] Enabled protected file-table compatibility: skipped "
+                 "legacy global EOF validation at RVA 0x"
+              << std::hex << ValidationLoopRva << std::dec << "\n";
+    return true;
+#else
+    return false;
+#endif
+}
+
 static void PrintPeDiagnostics(HMODULE module)
 {
     auto base = reinterpret_cast<const uint8_t*>(module);
@@ -612,6 +673,13 @@ int wmain(int argc, wchar_t** argv)
     if (!InstallProtectedArchiveBypass(dll))
     {
         std::cerr << "[ERROR] Refusing to continue without a verified protected-archive bypass.\n";
+        FreeLibrary(dll);
+        return 6;
+    }
+
+    if (!InstallProtectedFileTableCompatibility(dll))
+    {
+        std::cerr << "[ERROR] Refusing to continue without verified protected file-table compatibility.\n";
         FreeLibrary(dll);
         return 6;
     }
