@@ -8,6 +8,7 @@ on:
       - "Tools/MHOTranslator/**"
       - "Tools/MHOIFSExtractor/**"
       - "Tools/MHOTranslationKit/**"
+      - "Translation/es-ES/**"
       - ".github/workflows/build-mho-translation-kit.yml"
   pull_request:
     branches:
@@ -16,6 +17,7 @@ on:
       - "Tools/MHOTranslator/**"
       - "Tools/MHOIFSExtractor/**"
       - "Tools/MHOTranslationKit/**"
+      - "Translation/es-ES/**"
       - ".github/workflows/build-mho-translation-kit.yml"
   workflow_dispatch:
 
@@ -44,7 +46,9 @@ jobs:
           New-Item -ItemType Directory -Force artifacts/MHOTranslationKit | Out-Null
           Copy-Item artifacts/translator/* artifacts/MHOTranslationKit/ -Recurse
           Copy-Item Tools/MHOTranslationKit/ExtractAndScan.ps1 artifacts/MHOTranslationKit/
+          Copy-Item Tools/MHOTranslationKit/BuildSpanishPatch.ps1 artifacts/MHOTranslationKit/
           Copy-Item Tools/MHOTranslationKit/README.md artifacts/MHOTranslationKit/
+          Copy-Item Translation/es-ES artifacts/MHOTranslationKit/es-ES -Recurse
           @"
           Monster Hunter Online Translation Kit
 
