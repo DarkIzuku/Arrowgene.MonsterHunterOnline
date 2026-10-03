@@ -17,6 +17,7 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "inspect-ifs" => TranslationPatch.InspectIfsCommand(args.Skip(1).ToArray()),
     "inspect-entry" => InspectEntryCommand(args.Skip(1).ToArray()),
     "trace-path" => TracePathCommand(args.Skip(1).ToArray()),
+    "diff-swf-strings" => DiffSwfStringsCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
     _ => UnknownCommand(args[0])
@@ -63,6 +64,11 @@ Commands:
       Walks the active IIPS load order and reports every archive containing the
       requested path. Optionally extracts every version for byte/SWF comparison.
 
+  diff-swf-strings <before.swf> <after.swf> [--output <csv>]
+      Compares DoABC string-pool entries by tag ordinal and pool index.
+      Intended to discover exactly which strings the working English patch
+      changed relative to the original Chinese SWF.
+
   compare <original-dir> <patched-dir> [--output <csv>]
       Compares two extracted trees and reports which files the existing
       English patch changes/adds/removes.
@@ -81,6 +87,237 @@ static int UnknownCommand(string command)
 {
     Console.Error.WriteLine($"Unknown command: {command}");
     return ShowHelp();
+}
+
+
+static int DiffSwfStringsCommand(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("diff-swf-strings requires <before.swf> <after.swf> [--output <csv>].");
+        return 2;
+    }
+
+    string beforePath = Path.GetFullPath(args[0]);
+    string afterPath = Path.GetFullPath(args[1]);
+    string output = Path.GetFullPath(
+        GetOption(args, "--output") ??
+        Path.Combine(Environment.CurrentDirectory, "swf-string-diff.csv"));
+
+    if (!File.Exists(beforePath) || !File.Exists(afterPath))
+    {
+        Console.Error.WriteLine("Both SWF files must exist.");
+        return 2;
+    }
+
+    try
+    {
+        List<List<string>> beforePools = ExtractDoAbcStringPools(File.ReadAllBytes(beforePath), beforePath);
+        List<List<string>> afterPools = ExtractDoAbcStringPools(File.ReadAllBytes(afterPath), afterPath);
+
+        int tagCount = Math.Max(beforePools.Count, afterPools.Count);
+        int changed = 0;
+        int same = 0;
+        int structuralMismatches = 0;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        using StreamWriter writer = new(output, false, new UTF8Encoding(false));
+        writer.WriteLine("abc_tag,string_index,before,after,status,notes");
+
+        for (int tag = 0; tag < tagCount; tag++)
+        {
+            if (tag >= beforePools.Count || tag >= afterPools.Count)
+            {
+                structuralMismatches++;
+                writer.WriteLine($"{tag},0,,,review,\"DoABC tag missing on one side\"");
+                continue;
+            }
+
+            List<string> a = beforePools[tag];
+            List<string> z = afterPools[tag];
+            int count = Math.Max(a.Count, z.Count);
+            if (a.Count != z.Count)
+            {
+                structuralMismatches++;
+            }
+
+            for (int i = 1; i < count; i++)
+            {
+                string before = i < a.Count ? a[i] : string.Empty;
+                string after = i < z.Count ? z[i] : string.Empty;
+                if (before == after)
+                {
+                    same++;
+                    continue;
+                }
+
+                changed++;
+                string status = string.IsNullOrEmpty(before) || string.IsNullOrEmpty(after)
+                    ? "review"
+                    : "english_patch_changed";
+                string notes = a.Count == z.Count
+                    ? "same_pool_index"
+                    : "pool_count_mismatch";
+
+                writer.WriteLine(
+                    $"{tag},{i},{CsvCell(before)},{CsvCell(after)},{status},{CsvCell(notes)}");
+            }
+        }
+
+        Console.WriteLine($"Before:                {beforePath}");
+        Console.WriteLine($"After:                 {afterPath}");
+        Console.WriteLine($"DoABC tags before:     {beforePools.Count}");
+        Console.WriteLine($"DoABC tags after:      {afterPools.Count}");
+        Console.WriteLine($"Changed pool entries:  {changed}");
+        Console.WriteLine($"Unchanged pool entries:{same}");
+        Console.WriteLine($"Structural mismatches: {structuralMismatches}");
+        Console.WriteLine($"Output:                {output}");
+
+        return structuralMismatches == 0 ? 0 : 5;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"diff-swf-strings failed: {ex}");
+        return 7;
+    }
+}
+
+static List<List<string>> ExtractDoAbcStringPools(byte[] bytes, string name)
+{
+    SwfFile swf = SwfFile.Open(bytes, name);
+    List<List<string>> result = new();
+
+    foreach (SwfTag tag in swf.Tags)
+    {
+        if (tag.Code != 82)
+        {
+            continue;
+        }
+
+        ReadOnlySpan<byte> tagData = tag.Data.Span;
+        if (tagData.Length < 5)
+        {
+            continue;
+        }
+
+        int offset = 4;
+        while (offset < tagData.Length && tagData[offset] != 0)
+        {
+            offset++;
+        }
+        if (offset >= tagData.Length)
+        {
+            continue;
+        }
+
+        offset++;
+        ReadOnlySpan<byte> abc = tagData.Slice(offset);
+        if (abc.Length < 4)
+        {
+            continue;
+        }
+
+        int p = 4;
+
+        uint intCount = ReadAbcU30(abc, ref p);
+        for (uint i = 1; i < intCount; i++)
+        {
+            SkipAbcU32(abc, ref p);
+        }
+
+        uint uintCount = ReadAbcU30(abc, ref p);
+        for (uint i = 1; i < uintCount; i++)
+        {
+            SkipAbcU32(abc, ref p);
+        }
+
+        uint doubleCount = ReadAbcU30(abc, ref p);
+        if (doubleCount > 0)
+        {
+            int bytesToSkip = checked((int)((doubleCount - 1) * 8));
+            if (bytesToSkip > abc.Length - p)
+            {
+                throw new InvalidDataException("ABC double pool exceeds DoABC tag.");
+            }
+            p += bytesToSkip;
+        }
+
+        uint stringCount = ReadAbcU30(abc, ref p);
+        List<string> strings = new(checked((int)stringCount)) { string.Empty };
+        for (uint i = 1; i < stringCount; i++)
+        {
+            uint length = ReadAbcU30(abc, ref p);
+            int len = checked((int)length);
+            if (len > abc.Length - p)
+            {
+                throw new InvalidDataException("ABC string exceeds DoABC tag.");
+            }
+
+            ReadOnlySpan<byte> raw = abc.Slice(p, len);
+            p += len;
+            try
+            {
+                strings.Add(new UTF8Encoding(false, true).GetString(raw));
+            }
+            catch (DecoderFallbackException)
+            {
+                strings.Add(Convert.ToHexString(raw));
+            }
+        }
+
+        result.Add(strings);
+    }
+
+    return result;
+}
+
+static uint ReadAbcU30(ReadOnlySpan<byte> data, ref int offset)
+{
+    uint value = 0;
+    for (int i = 0; i < 5; i++)
+    {
+        if (offset >= data.Length)
+        {
+            throw new InvalidDataException("Unexpected end of ABC U30.");
+        }
+
+        byte b = data[offset++];
+        value |= (uint)(b & 0x7F) << (7 * i);
+        if ((b & 0x80) == 0)
+        {
+            return value & 0x3FFFFFFF;
+        }
+    }
+
+    throw new InvalidDataException("Invalid ABC U30.");
+}
+
+static void SkipAbcU32(ReadOnlySpan<byte> data, ref int offset)
+{
+    for (int i = 0; i < 5; i++)
+    {
+        if (offset >= data.Length)
+        {
+            throw new InvalidDataException("Unexpected end of ABC U32.");
+        }
+
+        byte b = data[offset++];
+        if ((b & 0x80) == 0)
+        {
+            return;
+        }
+    }
+
+    throw new InvalidDataException("Invalid ABC U32.");
+}
+
+static string CsvCell(string value)
+{
+    if (value.Contains('"') || value.Contains(',') || value.Contains('\r') || value.Contains('\n'))
+    {
+        return "\"" + value.Replace("\"", "\"\"") + "\"";
+    }
+    return value;
 }
 
 static int ExtractIfsCommand(string[] args)
