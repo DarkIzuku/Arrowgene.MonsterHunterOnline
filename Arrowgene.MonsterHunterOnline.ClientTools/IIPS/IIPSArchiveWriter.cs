@@ -214,46 +214,65 @@ internal static class IIPSArchiveWriter
             return;
         }
 
-        List<ulong> occupiedOffsets = records
-            .Where(record => record.FileOffset >= IIPSArchiveFormat.HeaderLength && record.FileOffset < sourceHeader.HetOffset)
-            .Select(record => record.FileOffset)
-            .Distinct()
-            .OrderBy(offset => offset)
-            .ToList();
+        HashSet<int> modifiedIndices = modifiedRecords.Select(record => record.Index).ToHashSet();
+        List<(ulong Start, ulong End)> freeRanges = BuildFreePayloadRanges(
+            records,
+            modifiedIndices,
+            IIPSArchiveFormat.HeaderLength,
+            sourceHeader.HetOffset);
 
-        foreach (IIPSArchiveEntryRecord record in modifiedRecords)
+        foreach (IIPSArchiveEntryRecord record in modifiedRecords.OrderByDescending(
+                     record => record.Content?.LongLength ?? checked((long)record.FileSize)))
         {
-            ulong originalOffset = record.FileOffset;
+            ulong originalOffset = record.OriginalFileOffset;
             if (originalOffset < IIPSArchiveFormat.HeaderLength || originalOffset >= sourceHeader.HetOffset)
             {
                 throw new InvalidDataException(
-                    $"Modified source record has no writable in-place payload region: {DescribeRecord(record)}");
+                    $"Modified source record has no writable original payload region: {DescribeRecord(record)}");
             }
 
-            ulong nextOffset = sourceHeader.HetOffset;
-            foreach (ulong candidate in occupiedOffsets)
-            {
-                if (candidate > originalOffset)
-                {
-                    nextOffset = candidate;
-                    break;
-                }
-            }
+            record.FileOffset = originalOffset;
+            byte[] sizingStored = BuildStoredData(archive, record, options, originalOffset);
+            ulong requiredLength = (ulong)sizingStored.Length;
 
-            ulong capacity = nextOffset - originalOffset;
-            byte[] stored = BuildStoredData(archive, record, options, originalOffset);
-            record.CompressedSize = (ulong)stored.Length;
-
-            if ((ulong)stored.Length > capacity)
+            ulong targetOffset;
+            bool keptOriginalOffset = TryAllocateAt(freeRanges, originalOffset, requiredLength, out targetOffset);
+            if (!keptOriginalOffset &&
+                !TryAllocateBestFit(freeRanges, requiredLength, out targetOffset))
             {
+                ulong largestFree = freeRanges.Count == 0
+                    ? 0
+                    : freeRanges.Max(range => range.End - range.Start);
+
                 throw new InvalidDataException(
-                    $"Modified record {record.Index} ({record.FileName}) needs {stored.Length} stored bytes " +
-                    $"but original layout has only {capacity} bytes available at 0x{originalOffset:X}. " +
+                    $"Modified record {record.Index} ({record.FileName}) needs {requiredLength} stored bytes, " +
+                    $"but no safe free payload range can hold it. Largest free range={largestFree} bytes; " +
+                    $"original offset=0x{originalOffset:X}, original stored length={record.OriginalStoredLength}. " +
                     $"Record: {DescribeRecord(record)}");
             }
 
-            output.Position = checked((long)originalOffset);
+            record.FileOffset = targetOffset;
+            byte[] stored = targetOffset == originalOffset
+                ? sizingStored
+                : BuildStoredData(archive, record, options, originalOffset);
+            record.CompressedSize = (ulong)stored.Length;
+
+            if ((ulong)stored.Length != requiredLength)
+            {
+                throw new InvalidDataException(
+                    $"Stored length changed after relocating record {record.Index}: " +
+                    $"sized={requiredLength}, final={stored.Length}. Record: {DescribeRecord(record)}");
+            }
+
+            output.Position = checked((long)targetOffset);
             output.Write(stored, 0, stored.Length);
+
+            if (targetOffset != originalOffset)
+            {
+                archive.ArchiveLogger.Info(
+                    $"Relocated modified nIFS entry {record.Index} ({record.FileName}) " +
+                    $"from 0x{originalOffset:X} to 0x{targetOffset:X}, stored={stored.Length}.");
+            }
         }
 
         byte[] betSection = PatchOriginalBetSection(archive, modifiedRecords, sourceHeader);
@@ -278,6 +297,177 @@ internal static class IIPSArchiveWriter
         output.Position = checked((long)sourceHeader.Md5TableOffset);
         output.Write(md5Table, 0, md5Table.Length);
         output.Flush();
+    }
+
+    private static List<(ulong Start, ulong End)> BuildFreePayloadRanges(
+        IReadOnlyList<IIPSArchiveEntryRecord> records,
+        IReadOnlySet<int> modifiedIndices,
+        ulong payloadStart,
+        ulong payloadEnd)
+    {
+        List<(ulong Start, ulong End)> occupied = new();
+
+        foreach (IIPSArchiveEntryRecord record in records)
+        {
+            if (modifiedIndices.Contains(record.Index) || record.OriginalStoredLength == 0)
+            {
+                continue;
+            }
+
+            ulong start = record.OriginalFileOffset;
+            if (start < payloadStart || start >= payloadEnd)
+            {
+                continue;
+            }
+
+            ulong end = checked(start + record.OriginalStoredLength);
+            if (end > payloadEnd)
+            {
+                throw new InvalidDataException(
+                    $"Original record {record.Index} extends into HET/BET metadata: {DescribeRecord(record)}");
+            }
+
+            occupied.Add((start, end));
+        }
+
+        occupied.Sort((left, right) => left.Start.CompareTo(right.Start));
+
+        List<(ulong Start, ulong End)> merged = new();
+        foreach ((ulong Start, ulong End) range in occupied)
+        {
+            if (merged.Count == 0 || range.Start > merged[^1].End)
+            {
+                merged.Add(range);
+                continue;
+            }
+
+            (ulong Start, ulong End) previous = merged[^1];
+            if (range.End > previous.End)
+            {
+                merged[^1] = (previous.Start, range.End);
+            }
+        }
+
+        List<(ulong Start, ulong End)> free = new();
+        ulong cursor = payloadStart;
+        foreach ((ulong Start, ulong End) range in merged)
+        {
+            if (range.Start > cursor)
+            {
+                free.Add((cursor, range.Start));
+            }
+
+            if (range.End > cursor)
+            {
+                cursor = range.End;
+            }
+        }
+
+        if (cursor < payloadEnd)
+        {
+            free.Add((cursor, payloadEnd));
+        }
+
+        return free;
+    }
+
+    private static bool TryAllocateAt(
+        List<(ulong Start, ulong End)> freeRanges,
+        ulong preferredStart,
+        ulong length,
+        out ulong allocatedStart)
+    {
+        allocatedStart = preferredStart;
+        if (length == 0)
+        {
+            return true;
+        }
+
+        ulong preferredEnd = checked(preferredStart + length);
+        for (int i = 0; i < freeRanges.Count; i++)
+        {
+            (ulong Start, ulong End) range = freeRanges[i];
+            if (preferredStart < range.Start || preferredEnd > range.End)
+            {
+                continue;
+            }
+
+            ReserveRange(freeRanges, i, preferredStart, preferredEnd);
+            return true;
+        }
+
+        allocatedStart = 0;
+        return false;
+    }
+
+    private static bool TryAllocateBestFit(
+        List<(ulong Start, ulong End)> freeRanges,
+        ulong length,
+        out ulong allocatedStart)
+    {
+        allocatedStart = 0;
+        if (length == 0)
+        {
+            return true;
+        }
+
+        int bestIndex = -1;
+        ulong bestLength = ulong.MaxValue;
+        for (int i = 0; i < freeRanges.Count; i++)
+        {
+            ulong rangeLength = freeRanges[i].End - freeRanges[i].Start;
+            if (rangeLength < length || rangeLength >= bestLength)
+            {
+                continue;
+            }
+
+            bestIndex = i;
+            bestLength = rangeLength;
+        }
+
+        if (bestIndex < 0)
+        {
+            return false;
+        }
+
+        allocatedStart = freeRanges[bestIndex].Start;
+        ulong allocatedEnd = checked(allocatedStart + length);
+        ReserveRange(freeRanges, bestIndex, allocatedStart, allocatedEnd);
+        return true;
+    }
+
+    private static void ReserveRange(
+        List<(ulong Start, ulong End)> freeRanges,
+        int index,
+        ulong reservedStart,
+        ulong reservedEnd)
+    {
+        (ulong Start, ulong End) range = freeRanges[index];
+        if (reservedStart < range.Start || reservedEnd > range.End || reservedStart > reservedEnd)
+        {
+            throw new InvalidOperationException("Attempted to reserve bytes outside a free nIFS payload range.");
+        }
+
+        bool keepLeft = reservedStart > range.Start;
+        bool keepRight = reservedEnd < range.End;
+
+        if (keepLeft && keepRight)
+        {
+            freeRanges[index] = (range.Start, reservedStart);
+            freeRanges.Insert(index + 1, (reservedEnd, range.End));
+        }
+        else if (keepLeft)
+        {
+            freeRanges[index] = (range.Start, reservedStart);
+        }
+        else if (keepRight)
+        {
+            freeRanges[index] = (reservedEnd, range.End);
+        }
+        else
+        {
+            freeRanges.RemoveAt(index);
+        }
     }
 
     private static byte[] PatchOriginalBetSection(
@@ -422,7 +612,8 @@ internal static class IIPSArchiveWriter
 
         return
             $"index={record.Index}, path='{path}', source={record.SourceKind}, " +
-            $"offset=0x{record.FileOffset:X}, fileSize={record.FileSize}, compressedSize={record.CompressedSize}, " +
+            $"offset=0x{record.FileOffset:X}, originalOffset=0x{record.OriginalFileOffset:X}, " +
+            $"fileSize={record.FileSize}, compressedSize={record.CompressedSize}, originalStored={record.OriginalStoredLength}, " +
             $"flags=0x{record.Flags:X8}, extra={record.Extra}, hetIndex={record.HetIndex}, " +
             $"listfile={isListFile}, memoryContent={hasMemoryContent}";
     }
@@ -999,6 +1190,8 @@ internal static class IIPSArchiveWriter
             FileOffset = record.FileOffset,
             FileSize = record.FileSize,
             CompressedSize = record.CompressedSize,
+            OriginalFileOffset = record.OriginalFileOffset,
+            OriginalStoredLength = record.OriginalStoredLength,
             Flags = record.Flags,
             NameHash = record.NameHash,
             HetIndex = record.HetIndex,

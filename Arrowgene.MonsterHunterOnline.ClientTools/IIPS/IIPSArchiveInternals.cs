@@ -230,6 +230,8 @@ internal sealed class IIPSArchiveEntryRecord
     public ulong FileOffset { get; set; }
     public ulong FileSize { get; set; }
     public ulong CompressedSize { get; set; }
+    public ulong OriginalFileOffset { get; set; }
+    public ulong OriginalStoredLength { get; set; }
     public uint Flags { get; set; }
     public ulong NameHash { get; set; }
     public int HetIndex { get; set; } = -1;

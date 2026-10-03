@@ -253,6 +253,8 @@ internal static class IIPSArchiveReader
                 FileOffset = filePos,
                 FileSize = fileSize,
                 CompressedSize = compressedSize,
+                OriginalFileOffset = filePos,
+                OriginalStoredLength = compressedSize == 0 ? fileSize : compressedSize,
                 Flags = flags,
                 Md5 = md5,
                 Extra = extra,
