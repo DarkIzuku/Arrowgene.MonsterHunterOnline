@@ -157,6 +157,115 @@ internal static class TranslationPatch
         return failures == 0 ? 0 : 10;
     }
 
+    public static int CloneIfsCommand(string[] args)
+    {
+        if (args.Length < 1)
+        {
+            Console.Error.WriteLine("clone-ifs requires <base.ifs> [--out <output.ifs>].");
+            return 2;
+        }
+
+        string baseIfs = Path.GetFullPath(args[0]);
+        string outputIfs = Path.GetFullPath(
+            GetOption(args, "--out") ??
+            Path.Combine(
+                Path.GetDirectoryName(baseIfs)!,
+                Path.GetFileNameWithoutExtension(baseIfs) + "_clone.ifs"));
+
+        if (!File.Exists(baseIfs))
+        {
+            Console.Error.WriteLine($"Base IFS does not exist: {baseIfs}");
+            return 2;
+        }
+
+        Console.WriteLine($"Base IFS:   {baseIfs}");
+        Console.WriteLine($"Output IFS: {outputIfs}");
+        Console.WriteLine("Mode:       no-op archive rebuild (zero modified entries)");
+
+        try
+        {
+            Dictionary<string, byte[]> originalEntries = new(StringComparer.OrdinalIgnoreCase);
+
+            using (IIPSArchive archive = IIPSArchive.Open(
+                       baseIfs,
+                       new IIPSArchiveOpenOptions
+                       {
+                           VerifyChecksums = true,
+                           LoadListFile = true,
+                           FileShare = FileShare.ReadWrite | FileShare.Delete,
+                       }))
+            {
+                foreach (IIPSArchiveEntry entry in archive.Entries)
+                {
+                    if (!entry.Exists || entry.IsDirectory || string.IsNullOrWhiteSpace(entry.ArchivePath))
+                    {
+                        continue;
+                    }
+
+                    originalEntries[entry.ArchivePath!] = entry.ReadAllBytes();
+                }
+
+                archive.Save(
+                    outputIfs,
+                    new IIPSArchiveSaveOptions
+                    {
+                        IncludeListFile = true,
+                        PreserveUnchangedEntries = true,
+                    });
+            }
+
+            int verified = 0;
+            int mismatched = 0;
+
+            using (IIPSArchive verify = IIPSArchive.Open(
+                       outputIfs,
+                       new IIPSArchiveOpenOptions
+                       {
+                           VerifyChecksums = true,
+                           LoadListFile = true,
+                           FileShare = FileShare.Read,
+                       }))
+            {
+                foreach ((string path, byte[] expected) in originalEntries)
+                {
+                    if (!verify.TryGetEntry(path, out IIPSArchiveEntry? entry) || entry == null)
+                    {
+                        Console.Error.WriteLine($"[MISSING] {path}");
+                        mismatched++;
+                        continue;
+                    }
+
+                    byte[] actual = entry.ReadAllBytes();
+                    if (!actual.AsSpan().SequenceEqual(expected))
+                    {
+                        Console.Error.WriteLine($"[MISMATCH] {path}");
+                        mismatched++;
+                        continue;
+                    }
+
+                    verified++;
+                }
+            }
+
+            string originalHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(baseIfs)));
+            string cloneHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(outputIfs)));
+
+            Console.WriteLine($"Verified entries: {verified}");
+            Console.WriteLine($"Mismatches:       {mismatched}");
+            Console.WriteLine($"Original SHA256:  {originalHash}");
+            Console.WriteLine($"Clone SHA256:     {cloneHash}");
+            Console.WriteLine($"Byte-identical:   {string.Equals(originalHash, cloneHash, StringComparison.OrdinalIgnoreCase)}");
+            Console.WriteLine($"Built:            {outputIfs}");
+
+            return mismatched == 0 ? 0 : 10;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"IFS clone failed: {ex}");
+            return 7;
+        }
+    }
+
     public static int BuildIfsCommand(string[] args)
     {
         if (args.Length < 2)
