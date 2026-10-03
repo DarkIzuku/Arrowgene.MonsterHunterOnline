@@ -7,6 +7,7 @@
 #include <vector>
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
 
 namespace fs = std::filesystem;
 
@@ -92,42 +93,71 @@ static bool IsExecutableOffset(HMODULE module, uintptr_t offset)
     return false;
 }
 
+static void WINAPI IFS2DebugSink(const char* message)
+{
+    if (!message) return;
+    std::cout << "[IFS2DBG] " << message;
+    size_t len = std::strlen(message);
+    if (len == 0 || message[len - 1] != '\n')
+        std::cout << "\n";
+    std::cout.flush();
+}
+
 static bool InstallDebugShim(HMODULE module)
 {
 #if defined(_M_IX86)
-    // The original Tencent/React IFS tool always installs a tiny stand-in for
-    // ifsdebug.dll before opening archives. IFS2.dll can dereference this
-    // interface during archive open, so leaving it null may cause 0xC0000005.
-    constexpr uintptr_t DebugInterfaceOffset = 0x8CBE0;
+    // Verified against the user's MHO IFS2.dll profile:
+    // SHA-256 69d1a8fa9df64149779c42fa19d7194f1917ba968e91efe4af2d535e21663d25
+    //
+    // The historical public extractor used RVA 0x8CBE0 for another build.
+    // This MHO build keeps the debug interface at 0x8BBD8 and the debug
+    // enable byte at 0x8BBBF.
+    constexpr uintptr_t DebugInterfaceRva = 0x8BBD8;
+    constexpr uintptr_t DebugEnabledRva = 0x8BBBF;
 
     auto base = reinterpret_cast<uint8_t*>(module);
-    auto slot = reinterpret_cast<DWORD*>(base + DebugInterfaceOffset);
+    auto interfaceSlot = reinterpret_cast<DWORD*>(base + DebugInterfaceRva);
+    auto enabledSlot = reinterpret_cast<BYTE*>(base + DebugEnabledRva);
 
     MEMORY_BASIC_INFORMATION mbi{};
-    if (VirtualQuery(slot, &mbi, sizeof(mbi)) != sizeof(mbi) || mbi.State != MEM_COMMIT)
+    if (VirtualQuery(interfaceSlot, &mbi, sizeof(mbi)) != sizeof(mbi) ||
+        mbi.State != MEM_COMMIT)
     {
-        std::cerr << "[IFS2] Debug shim slot is not mapped.\n";
+        std::cerr << "[IFS2] Debug interface slot is not mapped.\n";
         return false;
     }
 
-    static DWORD debugFunction = reinterpret_cast<DWORD>(&OutputDebugStringA);
-    static DWORD debugFunctionPtr = reinterpret_cast<DWORD>(&debugFunction);
+    static DWORD debugFunction = reinterpret_cast<DWORD>(&IFS2DebugSink);
+    static DWORD debugVtable = reinterpret_cast<DWORD>(&debugFunction);
 
-    DWORD oldProtect = 0;
-    if (!VirtualProtect(slot, sizeof(DWORD), PAGE_READWRITE, &oldProtect))
+    DWORD oldProtectInterface = 0;
+    if (!VirtualProtect(interfaceSlot, sizeof(DWORD), PAGE_READWRITE, &oldProtectInterface))
     {
-        std::cerr << "[IFS2] VirtualProtect failed for debug shim slot. Win32="
+        std::cerr << "[IFS2] VirtualProtect failed for debug interface. Win32="
                   << GetLastError() << "\n";
         return false;
     }
 
-    *slot = reinterpret_cast<DWORD>(&debugFunctionPtr);
+    *interfaceSlot = reinterpret_cast<DWORD>(&debugVtable);
 
     DWORD ignored = 0;
-    VirtualProtect(slot, sizeof(DWORD), oldProtect, &ignored);
+    VirtualProtect(interfaceSlot, sizeof(DWORD), oldProtectInterface, &ignored);
 
-    std::cout << "[IFS2] Installed ifsdebug compatibility shim at RVA 0x"
-              << std::hex << DebugInterfaceOffset << std::dec << "\n";
+    DWORD oldProtectEnabled = 0;
+    if (!VirtualProtect(enabledSlot, sizeof(BYTE), PAGE_READWRITE, &oldProtectEnabled))
+    {
+        std::cerr << "[IFS2] VirtualProtect failed for debug flag. Win32="
+                  << GetLastError() << "\n";
+        return false;
+    }
+
+    *enabledSlot = 1;
+    VirtualProtect(enabledSlot, sizeof(BYTE), oldProtectEnabled, &ignored);
+
+    std::cout << "[IFS2] Installed verified debug interface at RVA 0x"
+              << std::hex << DebugInterfaceRva
+              << " and enabled logging at RVA 0x" << DebugEnabledRva
+              << std::dec << "\n";
     return true;
 #else
     return false;
@@ -140,9 +170,13 @@ static HANDLE OpenArchiveSafe(const std::string& archivePath)
     HANDLE result = nullptr;
     __try
     {
+        SetLastError(ERROR_SUCCESS);
         std::cout << "[IFS2] Calling SFileOpenArchive_w...\n";
         result = gOpenArchive(archivePath.c_str(), 0);
-        std::cout << "[IFS2] SFileOpenArchive_w returned " << result << "\n";
+        DWORD lastError = GetLastError();
+        std::cout << "[IFS2] SFileOpenArchive_w returned " << result
+                  << " GetLastError=" << lastError
+                  << " (0x" << std::hex << lastError << std::dec << ")\n";
     }
     __except(EXCEPTION_EXECUTE_HANDLER)
     {
@@ -153,7 +187,13 @@ static HANDLE OpenArchiveSafe(const std::string& archivePath)
     }
     return result;
 #else
-    return gOpenArchive(archivePath.c_str(), 0);
+    SetLastError(ERROR_SUCCESS);
+    HANDLE result = gOpenArchive(archivePath.c_str(), 0);
+    DWORD lastError = GetLastError();
+    std::cout << "[IFS2] SFileOpenArchive_w returned " << result
+              << " GetLastError=" << lastError
+              << " (0x" << std::hex << lastError << std::dec << ")\n";
+    return result;
 #endif
 }
 
