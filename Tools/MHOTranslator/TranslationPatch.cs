@@ -633,6 +633,14 @@ internal static class TranslationPatch
                         throw new InvalidDataException($"Verification mismatch after rebuild: {archivePath}");
                     }
 
+                    string expectedMd5 = Convert.ToHexString(MD5.HashData(expected)).ToLowerInvariant();
+                    if (!string.Equals(entry.Md5, expectedMd5, StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidDataException(
+                            $"BET entry digest mismatch after rebuild: {archivePath}; " +
+                            $"stored={entry.Md5}, expected={expectedMd5}.");
+                    }
+
                     verified++;
                 }
 
