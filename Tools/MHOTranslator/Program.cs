@@ -15,6 +15,8 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "build-ifs" => TranslationPatch.BuildIfsCommand(args.Skip(1).ToArray()),
     "clone-ifs" => TranslationPatch.CloneIfsCommand(args.Skip(1).ToArray()),
     "inspect-ifs" => TranslationPatch.InspectIfsCommand(args.Skip(1).ToArray()),
+    "inspect-entry" => InspectEntryCommand(args.Skip(1).ToArray()),
+    "trace-path" => TracePathCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
     _ => UnknownCommand(args[0])
@@ -51,6 +53,15 @@ Commands:
   inspect-ifs <archive.ifs>
       Dumps the raw Tencent nIFS header, integrity-table layout and recomputed
       MD5 values needed for a client-compatible writer.
+
+  inspect-entry <archive.ifs> <archive-path>
+      Dumps one entry's BET metadata and compares the stored BET digest against
+      MD5 of the extracted resource and raw stored payload. For sector-based
+      files it also prints the sector table and compression markers.
+
+  trace-path <IIPSFileList.lst> <archive-path> [--out <dir>]
+      Walks the active IIPS load order and reports every archive containing the
+      requested path. Optionally extracts every version for byte/SWF comparison.
 
   compare <original-dir> <patched-dir> [--output <csv>]
       Compares two extracted trees and reports which files the existing
@@ -191,6 +202,219 @@ static int ExtractIfsCommand(string[] args)
     catch (Exception ex)
     {
         Console.Error.WriteLine($"IIPS open/extract failed: {ex}");
+        return 7;
+    }
+}
+
+
+static int InspectEntryCommand(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("inspect-entry requires <archive.ifs> <archive-path>.");
+        return 2;
+    }
+
+    string archivePath = Path.GetFullPath(args[0]);
+    string entryPath = args[1].Replace('/', '\\');
+    if (!File.Exists(archivePath))
+    {
+        Console.Error.WriteLine($"Archive does not exist: {archivePath}");
+        return 2;
+    }
+
+    try
+    {
+        using IIPSArchive archive = IIPSArchive.Open(
+            archivePath,
+            new IIPSArchiveOpenOptions
+            {
+                VerifyChecksums = false,
+                LoadListFile = false,
+                FileShare = FileShare.ReadWrite | FileShare.Delete,
+            });
+
+        IIPSArchiveEntry entry = archive.GetEntry(entryPath);
+        byte[] plain = entry.ReadAllBytes();
+        byte[] stored = entry.ReadStoredBytes();
+
+        static string Md5Hex(byte[] data) => Convert.ToHexString(MD5.HashData(data)).ToLowerInvariant();
+        static string Sha256Hex(byte[] data) => Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+
+        Console.WriteLine($"Archive:          {archivePath}");
+        Console.WriteLine($"Path:             {entryPath}");
+        Console.WriteLine($"Index:            {entry.Index}");
+        Console.WriteLine($"HET index:        {entry.HetIndex}");
+        Console.WriteLine($"Name hash:        0x{entry.NameHash:X16}");
+        Console.WriteLine($"Offset:           0x{entry.FileOffset:X}");
+        Console.WriteLine($"File size:        {entry.Length}");
+        Console.WriteLine($"Compressed size:  {entry.CompressedSize}");
+        Console.WriteLine($"Stored length:    {entry.StoredLength}");
+        Console.WriteLine($"Flags:            0x{(uint)entry.Flags:X8} ({entry.Flags})");
+        Console.WriteLine($"Storage mode:     {entry.StorageMode}");
+        Console.WriteLine($"Extra:            0x{entry.Extra:X16}");
+        Console.WriteLine($"BET 128-bit:      {entry.Md5}");
+        Console.WriteLine($"MD5 extracted:    {Md5Hex(plain)}");
+        Console.WriteLine($"MD5 stored:       {Md5Hex(stored)}");
+        Console.WriteLine($"SHA256 extracted: {Sha256Hex(plain)}");
+        Console.WriteLine($"SHA256 stored:    {Sha256Hex(stored)}");
+        Console.WriteLine($"Stored first 32:  {Convert.ToHexString(stored.AsSpan(0, Math.Min(32, stored.Length)))}");
+
+        if (!entry.IsSingleUnit && stored.Length >= 8)
+        {
+            int sectorSize = checked((int)archive.Metadata.SectorSize);
+            int sectorCount = (plain.Length + sectorSize - 1) / sectorSize;
+            int tableCount = sectorCount + 1;
+            if ((entry.Flags & IIPSArchiveEntryFlags.HasSectorCrc) != 0)
+            {
+                tableCount += sectorCount;
+            }
+
+            int tableBytes = checked(tableCount * 4);
+            Console.WriteLine();
+            Console.WriteLine($"Sector size:       {sectorSize}");
+            Console.WriteLine($"Sector count:      {sectorCount}");
+            Console.WriteLine($"Sector tbl count:  {tableCount}");
+
+            if (entry.IsEncrypted)
+            {
+                Console.WriteLine("Sector table:      encrypted (raw markers omitted)");
+            }
+            else if (stored.Length >= tableBytes)
+            {
+                uint[] offsets = new uint[tableCount];
+                for (int i = 0; i < tableCount; i++)
+                {
+                    offsets[i] = BitConverter.ToUInt32(stored, i * 4);
+                }
+
+                Console.WriteLine($"Sector table[0]:   0x{offsets[0]:X}");
+                Console.WriteLine($"Sector table[last]:0x{offsets[Math.Min(sectorCount, offsets.Length - 1)]:X}");
+
+                int shown = Math.Min(sectorCount, 16);
+                for (int i = 0; i < shown; i++)
+                {
+                    uint start = offsets[i];
+                    uint end = offsets[i + 1];
+                    int rawSize = Math.Min(sectorSize, plain.Length - i * sectorSize);
+                    string marker = start < stored.Length ? $"0x{stored[start]:X2}" : "(out)";
+                    Console.WriteLine(
+                        $"  sector[{i:D3}] 0x{start:X}-0x{end:X} len={end - start} raw={rawSize} marker={marker}");
+                }
+                if (sectorCount > shown)
+                {
+                    Console.WriteLine($"  ... {sectorCount - shown} more sectors");
+                }
+            }
+        }
+
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"inspect-entry failed: {ex}");
+        return 7;
+    }
+}
+
+static int TracePathCommand(string[] args)
+{
+    if (args.Length < 2)
+    {
+        Console.Error.WriteLine("trace-path requires <IIPSFileList.lst> <archive-path> [--out <dir>].");
+        return 2;
+    }
+
+    string listPath = Path.GetFullPath(args[0]);
+    string entryPath = args[1].Replace('/', '\\');
+    string? output = GetOption(args, "--out");
+    if (output != null)
+    {
+        output = Path.GetFullPath(output);
+        Directory.CreateDirectory(output);
+    }
+
+    if (!File.Exists(listPath))
+    {
+        Console.Error.WriteLine($"IIPS file list does not exist: {listPath}");
+        return 2;
+    }
+
+    try
+    {
+        IIPSFileList fileList = IIPSFileList.Parse(listPath);
+        IIPSFileListResolvedState state = fileList.Resolve();
+        string root = Path.GetDirectoryName(listPath)!;
+        string[] searchDirs = [root, Path.Combine(root, "iipsdownload")];
+        List<string> loadOrder = state.AllFilesInOrder.ToList();
+
+        Console.WriteLine($"IIPS list:        {listPath}");
+        Console.WriteLine($"Version:          {state.Version}");
+        Console.WriteLine($"Path:             {entryPath}");
+        Console.WriteLine($"Active archives:  {loadOrder.Count}");
+        Console.WriteLine();
+
+        int foundCount = 0;
+        for (int order = 0; order < loadOrder.Count; order++)
+        {
+            string fileName = loadOrder[order];
+            string? foundArchive = searchDirs
+                .Select(dir => Path.Combine(dir, fileName))
+                .FirstOrDefault(File.Exists);
+            if (foundArchive == null)
+            {
+                continue;
+            }
+
+            try
+            {
+                using IIPSArchive archive = IIPSArchive.Open(
+                    foundArchive,
+                    new IIPSArchiveOpenOptions
+                    {
+                        VerifyChecksums = false,
+                        LoadListFile = false,
+                        FileShare = FileShare.ReadWrite | FileShare.Delete,
+                    });
+
+                if (!archive.TryGetEntry(entryPath, out IIPSArchiveEntry? entry) || entry == null || !entry.Exists)
+                {
+                    continue;
+                }
+
+                foundCount++;
+                byte[] data = entry.ReadAllBytes();
+                string sha = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+                Console.WriteLine(
+                    $"[{order:D3}] {fileName} index={entry.Index} offset=0x{entry.FileOffset:X} " +
+                    $"size={entry.Length} stored={entry.StoredLength} flags=0x{(uint)entry.Flags:X8} " +
+                    $"bet128={entry.Md5} sha256={sha}");
+
+                if (output != null)
+                {
+                    string safe = string.Concat(fileName.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+                    string target = Path.Combine(output, $"{order:D3}_{safe}_{Path.GetFileName(entryPath)}");
+                    File.WriteAllBytes(target, data);
+                    Console.WriteLine($"      extracted -> {target}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[{order:D3}] {fileName} open failed: {ex.Message}");
+            }
+        }
+
+        Console.WriteLine();
+        Console.WriteLine($"Versions containing path: {foundCount}");
+        if (foundCount > 0)
+        {
+            Console.WriteLine("Later archives override earlier ones; the last hit is the runtime-visible resource.");
+        }
+        return foundCount > 0 ? 0 : 4;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"trace-path failed: {ex}");
         return 7;
     }
 }

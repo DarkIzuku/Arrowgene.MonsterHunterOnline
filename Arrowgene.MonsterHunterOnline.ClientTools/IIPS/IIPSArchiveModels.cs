@@ -89,6 +89,11 @@ public sealed class IIPSArchiveEntry
     public string? ArchivePath => _record.FileName;
     public long Length => checked((long)_record.FileSize);
     public long StoredLength => checked((long)IIPSArchiveFormat.GetStoredLength(_record));
+    public ulong FileOffset => _record.FileOffset;
+    public ulong CompressedSize => _record.CompressedSize;
+    public ulong NameHash => _record.NameHash;
+    public int HetIndex => _record.HetIndex;
+    public ulong Extra => _record.Extra;
     public string Md5 => _record.Md5 == null ? string.Empty : Convert.ToHexString(_record.Md5).ToLowerInvariant();
     public IIPSArchiveEntryFlags Flags => (IIPSArchiveEntryFlags)_record.Flags;
     public IIPSArchiveStorageMode StorageMode => _record.IsSingleUnit ? IIPSArchiveStorageMode.SingleUnit : IIPSArchiveStorageMode.SectorBased;
@@ -102,5 +107,10 @@ public sealed class IIPSArchiveEntry
     public byte[] ReadAllBytes()
     {
         return _archive.Extract(this);
+    }
+
+    public byte[] ReadStoredBytes()
+    {
+        return _archive.ReadStoredBytes(_record);
     }
 }
