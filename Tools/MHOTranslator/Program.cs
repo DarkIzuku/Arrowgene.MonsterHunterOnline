@@ -13,6 +13,7 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "scan" => ScanCommand(args.Skip(1).ToArray()),
     "apply" => TranslationPatch.ApplyCommand(args.Skip(1).ToArray()),
     "build-ifs" => TranslationPatch.BuildIfsCommand(args.Skip(1).ToArray()),
+    "clone-ifs" => TranslationPatch.CloneIfsCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
     _ => UnknownCommand(args[0])
@@ -41,6 +42,10 @@ Commands:
   build-ifs <base.ifs> <patched-dir> [--out <output.ifs>]
       Replaces translated resources in a copy of the base nIFS archive,
       saves it, reopens it and verifies modified entries byte-for-byte.
+
+  clone-ifs <base.ifs> [--out <output.ifs>]
+      Rebuilds the archive without modifying any entry, then verifies all
+      extracted contents. Used to test compatibility with Tencent IFS2.dll.
 
   compare <original-dir> <patched-dir> [--output <csv>]
       Compares two extracted trees and reports which files the existing
