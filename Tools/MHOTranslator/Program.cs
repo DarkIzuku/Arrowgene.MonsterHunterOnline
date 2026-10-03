@@ -270,18 +270,19 @@ static int ScanCommand(string[] args)
             {
                 DatFile dat = new();
                 dat.Open(bytes);
-                string content = dat.Content ?? "";
-                if (ContainsCjk(content))
+
+                if (dat.ContentType == DatFile.DatContentType.TSV && dat.Sheets.Count > 0)
                 {
                     textFiles++;
-                    string[] lines = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
-                    for (int i = 0; i < lines.Length; i++)
+                    ScanDatSheets(rows, relative, dat);
+                }
+                else
+                {
+                    string content = dat.Content ?? "";
+                    if (ContainsCjk(content))
                     {
-                        string source = NormalizeCandidate(lines[i]);
-                        if (source.Length == 0 || !ContainsCjk(source))
-                            continue;
-
-                        rows.Add(new ScanRow(relative, $"dat-line:{i + 1}", "dat-decrypted", "utf-8", source, 1, "", ""));
+                        textFiles++;
+                        ScanDatPlainContent(rows, relative, content);
                     }
                 }
             }
@@ -311,7 +312,7 @@ static int ScanCommand(string[] args)
                     continue;
                 }
 
-                rows.Add(new ScanRow(relative, $"line:{i + 1}", "text", encodingName, source, 1, "", ""));
+                rows.Add(new ScanRow(relative, $"line:{i + 1}", "text", "unknown", "normal", encodingName, source, 1, "", ""));
             }
 
             continue;
@@ -334,7 +335,7 @@ static int ScanCommand(string[] args)
     // Collapse duplicate strings from the same source file/kind. SWFs often
     // contain the same ActionScript/UI string multiple times.
     List<ScanRow> collapsed = rows
-        .GroupBy(r => new { r.Path, r.SourceKind, r.Encoding, r.Source })
+        .GroupBy(r => new { r.Path, r.SourceKind, r.FieldRole, r.Priority, r.Encoding, r.Source })
         .Select(g =>
         {
             ScanRow first = g.First();
@@ -355,13 +356,15 @@ static int ScanCommand(string[] args)
     Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
     using (StreamWriter writer = new(output, false, new UTF8Encoding(true)))
     {
-        writer.WriteLine("path,location,source_kind,encoding,source,occurrences,translation,notes");
+        writer.WriteLine("path,location,source_kind,field_role,priority,encoding,source,occurrences,translation,notes");
         foreach (ScanRow row in collapsed)
         {
             writer.WriteLine(string.Join(",",
                 Csv(row.Path),
                 Csv(row.Location),
                 Csv(row.SourceKind),
+                Csv(row.FieldRole),
+                Csv(row.Priority),
                 Csv(row.Encoding),
                 Csv(row.Source),
                 row.Occurrences.ToString(),
@@ -398,7 +401,224 @@ static int ScanCommand(string[] args)
         }
     }
 
+    Console.WriteLine();
+    Console.WriteLine("Rows by translation priority:");
+    foreach (var group in collapsed.GroupBy(x => x.Priority).OrderBy(x => x.Key))
+    {
+        Console.WriteLine($"{group.Key,-8} {group.Count(),8}");
+    }
+
+    string priorityOutput = Path.Combine(
+        Path.GetDirectoryName(Path.GetFullPath(output))!,
+        Path.GetFileNameWithoutExtension(output) + "-priority.csv");
+
+    using (StreamWriter writer = new(priorityOutput, false, new UTF8Encoding(true)))
+    {
+        writer.WriteLine("source,field_role,priority,occurrences,example_path,example_location,translation,notes");
+        foreach (var group in collapsed
+                     .Where(x => x.Priority is "high" or "medium")
+                     .GroupBy(x => new { x.Source, x.FieldRole, x.Priority })
+                     .Select(g => new
+                     {
+                         g.Key.Source,
+                         g.Key.FieldRole,
+                         g.Key.Priority,
+                         Occurrences = g.Sum(x => x.Occurrences),
+                         First = g.First(),
+                     })
+                     .OrderBy(x => x.Priority == "high" ? 0 : 1)
+                     .ThenByDescending(x => x.Occurrences)
+                     .ThenBy(x => x.Source, StringComparer.Ordinal))
+        {
+            writer.WriteLine(string.Join(",",
+                Csv(group.Source),
+                Csv(group.FieldRole),
+                Csv(group.Priority),
+                group.Occurrences.ToString(),
+                Csv(group.First.Path),
+                Csv(group.First.Location),
+                "",
+                ""));
+        }
+    }
+
+    Console.WriteLine($"Priority catalog:   {priorityOutput}");
+
     return 0;
+}
+
+static void ScanDatSheets(List<ScanRow> rows, string relative, DatFile dat)
+{
+    foreach (TsvSheet sheet in dat.Sheets)
+    {
+        if (sheet.TableHead == null)
+            continue;
+
+        string sheetName = string.IsNullOrWhiteSpace(sheet.Name) ? "(unnamed)" : sheet.Name;
+
+        // Headers are useful for reverse engineering but are normally metadata,
+        // not player-facing strings.
+        for (int c = 0; c < sheet.TableHead.Length; c++)
+        {
+            string header = NormalizeCandidate(sheet.TableHead[c] ?? "");
+            if (header.Length > 0 && ContainsCjk(header))
+            {
+                rows.Add(new ScanRow(
+                    relative,
+                    $"sheet:{sheetName}/header:{c + 1}",
+                    "dat-header",
+                    "schema",
+                    "low",
+                    "utf-8",
+                    header,
+                    1,
+                    "",
+                    ""));
+            }
+        }
+
+        if (sheet.Table == null)
+            continue;
+
+        for (int r = 0; r < sheet.Table.Length; r++)
+        {
+            string[] row = sheet.Table[r] ?? Array.Empty<string>();
+            for (int col = 0; col < row.Length; col++)
+            {
+                string source = NormalizeCandidate(row[col] ?? "");
+                if (source.Length == 0 || !ContainsCjk(source))
+                    continue;
+
+                string header = col < sheet.TableHead.Length
+                    ? NormalizeCandidate(sheet.TableHead[col] ?? "")
+                    : $"col{col + 1}";
+
+                (string role, string priority) = ClassifyDatField(header);
+
+                rows.Add(new ScanRow(
+                    relative,
+                    $"sheet:{sheetName}/row:{r + 1}/col:{col + 1}:{header}",
+                    "dat-cell",
+                    role,
+                    priority,
+                    "utf-8",
+                    source,
+                    1,
+                    "",
+                    ""));
+            }
+        }
+    }
+}
+
+static void ScanDatPlainContent(List<ScanRow> rows, string relative, string content)
+{
+    string trimmed = content.TrimEnd('\0').Trim();
+
+    if (trimmed.StartsWith("<", StringComparison.Ordinal))
+    {
+        try
+        {
+            System.Xml.Linq.XDocument doc = System.Xml.Linq.XDocument.Parse(trimmed);
+            int index = 0;
+            foreach (System.Xml.Linq.XElement element in doc.Descendants())
+            {
+                if (element.HasElements)
+                    continue;
+
+                string source = NormalizeCandidate(element.Value);
+                if (source.Length == 0 || !ContainsCjk(source))
+                    continue;
+
+                string field = element.Name.LocalName;
+                (string role, string priority) = ClassifyDatField(field);
+
+                rows.Add(new ScanRow(
+                    relative,
+                    $"xml:{BuildXmlPath(element)}/value:{index++}",
+                    "dat-xml",
+                    role,
+                    priority,
+                    "utf-8",
+                    source,
+                    1,
+                    "",
+                    ""));
+            }
+            return;
+        }
+        catch
+        {
+            // Fall through to line scan if this decrypted content is not valid XML.
+        }
+    }
+
+    string[] lines = trimmed.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+    for (int i = 0; i < lines.Length; i++)
+    {
+        string source = NormalizeCandidate(lines[i]);
+        if (source.Length == 0 || !ContainsCjk(source))
+            continue;
+
+        rows.Add(new ScanRow(
+            relative,
+            $"dat-line:{i + 1}",
+            "dat-decrypted",
+            "unknown",
+            "normal",
+            "utf-8",
+            source,
+            1,
+            "",
+            ""));
+    }
+}
+
+static string BuildXmlPath(System.Xml.Linq.XElement element)
+{
+    Stack<string> parts = new();
+    System.Xml.Linq.XElement? current = element;
+    while (current != null)
+    {
+        string id = current.Attribute("Id")?.Value ?? "";
+        parts.Push(string.IsNullOrEmpty(id) ? current.Name.LocalName : $"{current.Name.LocalName}[{id}]");
+        current = current.Parent;
+    }
+    return string.Join("/", parts);
+}
+
+static (string Role, string Priority) ClassifyDatField(string header)
+{
+    string h = header.Trim();
+
+    string[] highName =
+    [
+        "Name", "名字", "名称", "物品名称", "配方名称", "怪物名称", "LevelName",
+        "NPC名称", "技能名称", "任务名称", "标题", "Title"
+    ];
+    string[] highDescription =
+    [
+        "Description", "说明", "描述", "Note", "CompleteNote", "备注", "文本",
+        "Text", "Message", "消息", "对白", "对话", "内容"
+    ];
+    string[] medium =
+    [
+        "提示", "Tip", "Help", "帮助", "奖励名称", "Buff名称", "技能说明",
+        "效果说明", "猎团", "系统"
+    ];
+
+    if (highName.Any(x => h.Equals(x, StringComparison.OrdinalIgnoreCase) || h.Contains(x, StringComparison.OrdinalIgnoreCase)))
+        return ("name-title", "high");
+
+    if (highDescription.Any(x => h.Equals(x, StringComparison.OrdinalIgnoreCase) || h.Contains(x, StringComparison.OrdinalIgnoreCase)))
+        return ("description-message", "high");
+
+    if (medium.Any(x => h.Equals(x, StringComparison.OrdinalIgnoreCase) || h.Contains(x, StringComparison.OrdinalIgnoreCase)))
+        return ("player-facing", "medium");
+
+    // Numeric/config columns sometimes have Chinese headers, but CJK in their
+    // cell values can still be enums or developer metadata. Keep them, lower priority.
+    return ("unknown", "normal");
 }
 
 static void ScanSwfStructured(List<ScanRow> rows, string relative, string file)
@@ -485,6 +705,8 @@ static void ScanDoAbcTag(List<ScanRow> rows, string relative, SwfTag tag)
             relative,
             $"tag:{tag.Index}/abc:{abcName}/str:{i}",
             "swf-abc",
+            "ui-string",
+            "high",
             "utf-8",
             value,
             1,
@@ -551,7 +773,7 @@ static void AddNullTerminatedUtf8Strings(
                 value = NormalizeCandidate(value);
                 if (value.Length > 0 && value.Length <= 1024 && ContainsCjk(value) && LooksLikeUsefulBinaryString(value))
                 {
-                    rows.Add(new ScanRow(relative, $"{locationPrefix}/str:{index}", sourceKind, "utf-8", value, 1, "", ""));
+                    rows.Add(new ScanRow(relative, $"{locationPrefix}/str:{index}", sourceKind, "ui-string", "high", "utf-8", value, 1, "", ""));
                 }
             }
             catch (DecoderFallbackException)
@@ -682,6 +904,8 @@ static void AddDecodedBinaryHits(
                     relative,
                     $"char:{start}",
                     sourceKind,
+                    "binary-string",
+                    "low",
                     encodingName,
                     candidate,
                     1,
@@ -996,6 +1220,8 @@ readonly record struct ScanRow(
     string Path,
     string Location,
     string SourceKind,
+    string FieldRole,
+    string Priority,
     string Encoding,
     string Source,
     int Occurrences,
