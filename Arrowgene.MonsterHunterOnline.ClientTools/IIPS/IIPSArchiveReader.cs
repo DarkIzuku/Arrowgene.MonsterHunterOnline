@@ -11,13 +11,15 @@ internal static class IIPSArchiveReader
 {
     public static void Load(IIPSArchive archive, string path, IIPSArchiveOpenOptions options)
     {
-        FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, options.FileShare);
         BinaryReader reader = new BinaryReader(stream);
 
         try
         {
             IIPSArchiveHeaderData header = ReadHeader(stream, reader, options.VerifyChecksums, archive.ArchiveLogger);
 
+            byte[] originalHetSection = ReadBytesAt(stream, reader, (long)header.HetOffset, (int)header.HetLength);
+            byte[] originalBetSection = ReadBytesAt(stream, reader, (long)header.BetOffset, (int)header.BetLength);
             stream.Position = (long)header.HetOffset;
             uint hetMagic = reader.ReadUInt32();
             uint hetVersion = reader.ReadUInt32();
@@ -32,7 +34,7 @@ internal static class IIPSArchiveReader
             uint betDataLength = reader.ReadUInt32();
             byte[] betData = reader.ReadBytes((int)betDataLength);
             IIPSArchiveCrypto.IfsSectionDecrypt(betData);
-            List<IIPSArchiveEntryRecord> records = ParseBetEntries(betData, hetState, archive.ArchiveLogger);
+            List<IIPSArchiveEntryRecord> records = ParseBetEntries(betData, hetState, archive.ArchiveLogger, out uint[] originalBetHeader);
 
             IIPSArchiveMetadata metadata = new IIPSArchiveMetadata
             {
@@ -41,6 +43,13 @@ internal static class IIPSArchiveReader
                 HeaderMd5 = header.HeaderMd5,
                 BetMd5 = header.BetMd5,
                 HetMd5 = header.HetMd5,
+                Md5PieceSize = header.Md5PieceSize,
+                RawChunkSize = header.RawChunkSize,
+                Md5PatchBaseTag = (byte[])header.Md5PatchBaseTag.Clone(),
+                Md5PatchedTag = (byte[])header.Md5PatchedTag.Clone(),
+                OriginalHetSection = originalHetSection,
+                OriginalBetSection = originalBetSection,
+                OriginalBetHeader = originalBetHeader,
             };
 
             archive.ReplaceState(path, stream, reader, metadata, records, lookup);
@@ -173,7 +182,7 @@ internal static class IIPSArchiveReader
         return new IIPSArchiveLookup(totalCount, indexSize, indexSizeTotal, hashBitSize, nameHashes, fileIndexData);
     }
 
-    private static List<IIPSArchiveEntryRecord> ParseBetEntries(byte[] betData, HetState hetState, Arrowgene.Logging.ILogger logger)
+    private static List<IIPSArchiveEntryRecord> ParseBetEntries(byte[] betData, HetState hetState, Arrowgene.Logging.ILogger logger, out uint[] originalHeader)
     {
         if (betData.Length < 84)
         {
@@ -188,6 +197,7 @@ internal static class IIPSArchiveReader
         {
             header[i] = bet.ReadUInt32();
         }
+        originalHeader = (uint[])header.Clone();
 
         uint entryCount = header[1];
         uint tableEntrySize = header[2];
@@ -243,6 +253,8 @@ internal static class IIPSArchiveReader
                 FileOffset = filePos,
                 FileSize = fileSize,
                 CompressedSize = compressedSize,
+                OriginalFileOffset = filePos,
+                OriginalStoredLength = compressedSize == 0 ? fileSize : compressedSize,
                 Flags = flags,
                 Md5 = md5,
                 Extra = extra,

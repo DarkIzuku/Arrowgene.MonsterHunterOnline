@@ -35,12 +35,20 @@ public sealed class IIPSArchiveMetadata
     public string HeaderMd5 { get; internal set; } = string.Empty;
     public string BetMd5 { get; internal set; } = string.Empty;
     public string HetMd5 { get; internal set; } = string.Empty;
+    public uint Md5PieceSize { get; internal set; }
+    public uint RawChunkSize { get; internal set; }
+    internal byte[] Md5PatchBaseTag { get; set; } = new byte[16];
+    internal byte[] Md5PatchedTag { get; set; } = new byte[16];
+    internal byte[] OriginalHetSection { get; set; } = Array.Empty<byte>();
+    internal byte[] OriginalBetSection { get; set; } = Array.Empty<byte>();
+    internal uint[] OriginalBetHeader { get; set; } = Array.Empty<uint>();
 }
 
 public sealed class IIPSArchiveOpenOptions
 {
     public bool LoadListFile { get; set; } = true;
     public bool VerifyChecksums { get; set; } = true;
+    public System.IO.FileShare FileShare { get; set; } = System.IO.FileShare.Read;
 }
 
 public sealed class IIPSArchiveCreationOptions
@@ -51,6 +59,7 @@ public sealed class IIPSArchiveCreationOptions
 
 public sealed class IIPSArchiveSaveOptions
 {
+    public bool PreserveOriginalLayout { get; set; }
     public bool IncludeListFile { get; set; } = true;
     public bool PreserveUnchangedEntries { get; set; } = true;
 }
@@ -80,6 +89,11 @@ public sealed class IIPSArchiveEntry
     public string? ArchivePath => _record.FileName;
     public long Length => checked((long)_record.FileSize);
     public long StoredLength => checked((long)IIPSArchiveFormat.GetStoredLength(_record));
+    public ulong FileOffset => _record.FileOffset;
+    public ulong CompressedSize => _record.CompressedSize;
+    public ulong NameHash => _record.NameHash;
+    public int HetIndex => _record.HetIndex;
+    public ulong Extra => _record.Extra;
     public string Md5 => _record.Md5 == null ? string.Empty : Convert.ToHexString(_record.Md5).ToLowerInvariant();
     public IIPSArchiveEntryFlags Flags => (IIPSArchiveEntryFlags)_record.Flags;
     public IIPSArchiveStorageMode StorageMode => _record.IsSingleUnit ? IIPSArchiveStorageMode.SingleUnit : IIPSArchiveStorageMode.SectorBased;
@@ -93,5 +107,10 @@ public sealed class IIPSArchiveEntry
     public byte[] ReadAllBytes()
     {
         return _archive.Extract(this);
+    }
+
+    public byte[] ReadStoredBytes()
+    {
+        return _archive.ReadStoredBytes(_record);
     }
 }

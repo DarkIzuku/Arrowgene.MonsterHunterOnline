@@ -23,6 +23,33 @@ internal static class IIPSArchiveWriter
         string tempPath = Path.Combine(targetDirectory, Path.GetRandomFileName());
         List<IIPSArchiveEntryRecord> records = PrepareRecords(archive, options);
 
+        if (options.PreserveOriginalLayout)
+        {
+            try
+            {
+                SavePreservingOriginalLayout(archive, targetPath, tempPath, records, options);
+
+                bool overwriteCurrentSource = archive.CurrentSourcePath != null &&
+                                              string.Equals(Path.GetFullPath(archive.CurrentSourcePath), targetPath, StringComparison.OrdinalIgnoreCase);
+                if (overwriteCurrentSource)
+                {
+                    archive.ReleaseSourceHandles();
+                }
+
+                File.Move(tempPath, targetPath, overwrite: true);
+                IIPSArchiveReader.Load(archive, targetPath, new IIPSArchiveOpenOptions());
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                {
+                    File.Delete(tempPath);
+                }
+            }
+
+            return;
+        }
+
         try
         {
             using (FileStream output = new FileStream(tempPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
@@ -37,13 +64,31 @@ internal static class IIPSArchiveWriter
                     record.CompressedSize = (ulong)storedData.Length;
                 }
 
-                byte[] hetSection = IIPSArchiveSerialization.BuildSection(IIPSArchiveFormat.HetSignature, BuildHetData(records));
+                byte[] hetSection =
+                    archive.Metadata.OriginalHetSection.Length > 0 &&
+                    archive.Metadata.OriginalBetHeader.Length >= 2 &&
+                    archive.Metadata.OriginalBetHeader[1] == (uint)records.Count
+                        ? (byte[])archive.Metadata.OriginalHetSection.Clone()
+                        : IIPSArchiveSerialization.BuildSection(IIPSArchiveFormat.HetSignature, BuildHetData(records));
                 ulong hetOffset = (ulong)output.Position;
                 output.Write(hetSection, 0, hetSection.Length);
 
-                byte[] betSection = IIPSArchiveSerialization.BuildSection(IIPSArchiveFormat.BetSignature, BuildBetData(records));
+                byte[] betSection = IIPSArchiveSerialization.BuildSection(
+                    IIPSArchiveFormat.BetSignature,
+                    BuildBetData(records, archive.Metadata.OriginalBetHeader));
                 ulong betOffset = (ulong)output.Position;
                 output.Write(betSection, 0, betSection.Length);
+
+                uint md5PieceSize = archive.Metadata.Md5PieceSize != 0 ? archive.Metadata.Md5PieceSize : 0x4000u;
+                uint rawChunkSize = archive.Metadata.RawChunkSize != 0 ? archive.Metadata.RawChunkSize : md5PieceSize;
+                PadToAlignment(output, md5PieceSize);
+
+                ulong archiveSize = (ulong)output.Position;
+                ulong chunkCount = archiveSize / md5PieceSize;
+                ulong md5TableLength = checked((chunkCount + 1) * 16UL);
+                ulong md5TableOffset = archiveSize;
+                ulong bitmapOffset = checked(md5TableOffset + md5TableLength);
+                ulong bitmapLength = chunkCount;
 
                 IIPSArchiveHeaderData header = new IIPSArchiveHeaderData
                 {
@@ -51,19 +96,19 @@ internal static class IIPSArchiveWriter
                     HeaderLength = IIPSArchiveFormat.HeaderLength,
                     FormatVersion = archive.Metadata.FormatVersion,
                     SectorSizeShift = archive.Metadata.SectorSizeShift,
-                    ArchiveSize = (ulong)output.Position,
+                    ArchiveSize = archiveSize,
                     BetOffset = betOffset,
                     HetOffset = hetOffset,
-                    Md5TableOffset = 0,
-                    BitmapOffset = 0,
+                    Md5TableOffset = md5TableOffset,
+                    BitmapOffset = bitmapOffset,
                     HetLength = (ulong)hetSection.Length,
                     BetLength = (ulong)betSection.Length,
-                    Md5TableLength = 0,
-                    BitmapLength = 0,
-                    Md5PieceSize = 0,
-                    RawChunkSize = 0,
-                    Md5PatchBaseTag = new byte[16],
-                    Md5PatchedTag = new byte[16],
+                    Md5TableLength = md5TableLength,
+                    BitmapLength = bitmapLength,
+                    Md5PieceSize = md5PieceSize,
+                    RawChunkSize = rawChunkSize,
+                    Md5PatchBaseTag = (byte[])archive.Metadata.Md5PatchBaseTag.Clone(),
+                    Md5PatchedTag = (byte[])archive.Metadata.Md5PatchedTag.Clone(),
                     BetMd5 = IIPSArchiveCrypto.Md5(betSection),
                     HetMd5 = IIPSArchiveCrypto.Md5(hetSection),
                 };
@@ -71,6 +116,16 @@ internal static class IIPSArchiveWriter
                 byte[] headerBytes = IIPSArchiveSerialization.BuildHeader(header);
                 output.Position = 0;
                 output.Write(headerBytes, 0, headerBytes.Length);
+                output.Flush();
+
+                byte[] md5Table = BuildRawChunkMd5Table(output, archiveSize, md5PieceSize);
+                output.Position = checked((long)md5TableOffset);
+                output.Write(md5Table, 0, md5Table.Length);
+
+                byte[] bitmap = new byte[checked((int)bitmapLength)];
+                Array.Fill(bitmap, (byte)0x01);
+                output.Write(bitmap, 0, bitmap.Length);
+                output.SetLength(output.Position);
             }
 
             bool overwriteCurrentSource = archive.CurrentSourcePath != null &&
@@ -90,6 +145,570 @@ internal static class IIPSArchiveWriter
                 File.Delete(tempPath);
             }
         }
+    }
+
+    private static void SavePreservingOriginalLayout(
+        IIPSArchive archive,
+        string targetPath,
+        string tempPath,
+        List<IIPSArchiveEntryRecord> records,
+        IIPSArchiveSaveOptions options)
+    {
+        string? sourcePath = archive.CurrentSourcePath;
+        if (string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+        {
+            throw new InvalidOperationException("Original-layout save requires a source-backed archive.");
+        }
+
+        if (archive.Metadata.OriginalBetHeader.Length != 21)
+        {
+            throw new InvalidOperationException("Original-layout save requires the original BET header.");
+        }
+
+        uint originalEntryCount = archive.Metadata.OriginalBetHeader[1];
+        List<IIPSArchiveEntryRecord> addedRecords = records
+            .Where(record =>
+                record.Index >= originalEntryCount ||
+                (record.SourceKind == IIPSArchiveEntrySourceKind.Memory && record.HetIndex < 0))
+            .ToList();
+
+        if ((uint)records.Count != originalEntryCount || addedRecords.Count > 0)
+        {
+            string details = addedRecords.Count == 0
+                ? "No newly-added record could be identified; the archive entry count changed."
+                : string.Join(Environment.NewLine, addedRecords.Take(8).Select(DescribeRecord));
+
+            throw new InvalidOperationException(
+                $"Original-layout save cannot add or remove archive entries. " +
+                $"Original count={originalEntryCount}, current count={records.Count}." +
+                Environment.NewLine + details);
+        }
+
+        List<IIPSArchiveEntryRecord> modifiedRecords = records
+            .Where(record => record.SourceKind == IIPSArchiveEntrySourceKind.Memory)
+            .ToList();
+
+        File.Copy(sourcePath, tempPath, overwrite: true);
+
+        using FileStream output = new FileStream(tempPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+        IIPSArchiveHeaderData sourceHeader = ReadSourceHeader(output);
+
+        if ((ulong)archive.Metadata.OriginalHetSection.Length != sourceHeader.HetLength)
+        {
+            throw new InvalidDataException(
+                $"Original HET section length mismatch: metadata={archive.Metadata.OriginalHetSection.Length}, header={sourceHeader.HetLength}.");
+        }
+
+        if ((ulong)archive.Metadata.OriginalBetSection.Length != sourceHeader.BetLength)
+        {
+            throw new InvalidDataException(
+                $"Original BET section length mismatch: metadata={archive.Metadata.OriginalBetSection.Length}, header={sourceHeader.BetLength}.");
+        }
+
+        // A validated no-op must remain physically identical to the source archive.
+        // We intentionally leave the copied header, BET/HET, MD5 table, bitmap,
+        // padding and all stored payload bytes untouched.
+        if (modifiedRecords.Count == 0)
+        {
+            output.Flush();
+            return;
+        }
+
+        HashSet<int> modifiedIndices = modifiedRecords.Select(record => record.Index).ToHashSet();
+        List<(ulong Start, ulong End)> freeRanges = BuildFreePayloadRanges(
+            records,
+            modifiedIndices,
+            IIPSArchiveFormat.HeaderLength,
+            sourceHeader.HetOffset);
+
+        foreach (IIPSArchiveEntryRecord record in modifiedRecords.OrderByDescending(
+                     record => record.Content?.LongLength ?? checked((long)record.FileSize)))
+        {
+            ulong originalOffset = record.OriginalFileOffset;
+            if (originalOffset < IIPSArchiveFormat.HeaderLength || originalOffset >= sourceHeader.HetOffset)
+            {
+                throw new InvalidDataException(
+                    $"Modified source record has no writable original payload region: {DescribeRecord(record)}");
+            }
+
+            record.FileOffset = originalOffset;
+            byte[] sizingStored = BuildStoredData(archive, record, options, originalOffset);
+            ulong requiredLength = (ulong)sizingStored.Length;
+
+            ulong targetOffset;
+            bool keptOriginalOffset = TryAllocateAt(freeRanges, originalOffset, requiredLength, out targetOffset);
+            if (!keptOriginalOffset &&
+                !TryAllocateBestFit(freeRanges, requiredLength, out targetOffset))
+            {
+                ulong largestFree = freeRanges.Count == 0
+                    ? 0
+                    : freeRanges.Max(range => range.End - range.Start);
+
+                throw new InvalidDataException(
+                    $"Modified record {record.Index} ({record.FileName}) needs {requiredLength} stored bytes, " +
+                    $"but no safe free payload range can hold it. Largest free range={largestFree} bytes; " +
+                    $"original offset=0x{originalOffset:X}, original stored length={record.OriginalStoredLength}. " +
+                    $"Record: {DescribeRecord(record)}");
+            }
+
+            record.FileOffset = targetOffset;
+            byte[] stored = targetOffset == originalOffset
+                ? sizingStored
+                : BuildStoredData(archive, record, options, originalOffset);
+            record.CompressedSize = (ulong)stored.Length;
+
+            if ((ulong)stored.Length != requiredLength)
+            {
+                throw new InvalidDataException(
+                    $"Stored length changed after relocating record {record.Index}: " +
+                    $"sized={requiredLength}, final={stored.Length}. Record: {DescribeRecord(record)}");
+            }
+
+            output.Position = checked((long)targetOffset);
+            output.Write(stored, 0, stored.Length);
+
+            if (targetOffset != originalOffset)
+            {
+                archive.ArchiveLogger.Info(
+                    $"Relocated modified nIFS entry {record.Index} ({record.FileName}) " +
+                    $"from 0x{originalOffset:X} to 0x{targetOffset:X}, stored={stored.Length}.");
+            }
+        }
+
+        byte[] betSection = PatchOriginalBetSection(archive, modifiedRecords, sourceHeader);
+        output.Position = checked((long)sourceHeader.BetOffset);
+        output.Write(betSection, 0, betSection.Length);
+
+        sourceHeader.BetMd5 = IIPSArchiveCrypto.Md5(betSection);
+        sourceHeader.HetMd5 = IIPSArchiveCrypto.Md5(archive.Metadata.OriginalHetSection);
+
+        byte[] headerBytes = IIPSArchiveSerialization.BuildHeader(sourceHeader);
+        output.Position = 0;
+        output.Write(headerBytes, 0, headerBytes.Length);
+        output.Flush();
+
+        byte[] md5Table = BuildRawChunkMd5Table(output, sourceHeader.ArchiveSize, sourceHeader.Md5PieceSize);
+        if ((ulong)md5Table.Length != sourceHeader.Md5TableLength)
+        {
+            throw new InvalidDataException(
+                $"MD5 table length changed in original-layout mode: original={sourceHeader.Md5TableLength}, rebuilt={md5Table.Length}.");
+        }
+
+        output.Position = checked((long)sourceHeader.Md5TableOffset);
+        output.Write(md5Table, 0, md5Table.Length);
+        output.Flush();
+    }
+
+    private static List<(ulong Start, ulong End)> BuildFreePayloadRanges(
+        IReadOnlyList<IIPSArchiveEntryRecord> records,
+        IReadOnlySet<int> modifiedIndices,
+        ulong payloadStart,
+        ulong payloadEnd)
+    {
+        List<(ulong Start, ulong End)> occupied = new();
+
+        foreach (IIPSArchiveEntryRecord record in records)
+        {
+            if (modifiedIndices.Contains(record.Index) || record.OriginalStoredLength == 0)
+            {
+                continue;
+            }
+
+            ulong start = record.OriginalFileOffset;
+            if (start < payloadStart || start >= payloadEnd)
+            {
+                continue;
+            }
+
+            ulong end = checked(start + record.OriginalStoredLength);
+            if (end > payloadEnd)
+            {
+                throw new InvalidDataException(
+                    $"Original record {record.Index} extends into HET/BET metadata: {DescribeRecord(record)}");
+            }
+
+            occupied.Add((start, end));
+        }
+
+        occupied.Sort((left, right) => left.Start.CompareTo(right.Start));
+
+        List<(ulong Start, ulong End)> merged = new();
+        foreach ((ulong Start, ulong End) range in occupied)
+        {
+            if (merged.Count == 0 || range.Start > merged[^1].End)
+            {
+                merged.Add(range);
+                continue;
+            }
+
+            (ulong Start, ulong End) previous = merged[^1];
+            if (range.End > previous.End)
+            {
+                merged[^1] = (previous.Start, range.End);
+            }
+        }
+
+        List<(ulong Start, ulong End)> free = new();
+        ulong cursor = payloadStart;
+        foreach ((ulong Start, ulong End) range in merged)
+        {
+            if (range.Start > cursor)
+            {
+                free.Add((cursor, range.Start));
+            }
+
+            if (range.End > cursor)
+            {
+                cursor = range.End;
+            }
+        }
+
+        if (cursor < payloadEnd)
+        {
+            free.Add((cursor, payloadEnd));
+        }
+
+        return free;
+    }
+
+    private static bool TryAllocateAt(
+        List<(ulong Start, ulong End)> freeRanges,
+        ulong preferredStart,
+        ulong length,
+        out ulong allocatedStart)
+    {
+        allocatedStart = preferredStart;
+        if (length == 0)
+        {
+            return true;
+        }
+
+        ulong preferredEnd = checked(preferredStart + length);
+        for (int i = 0; i < freeRanges.Count; i++)
+        {
+            (ulong Start, ulong End) range = freeRanges[i];
+            if (preferredStart < range.Start || preferredEnd > range.End)
+            {
+                continue;
+            }
+
+            ReserveRange(freeRanges, i, preferredStart, preferredEnd);
+            return true;
+        }
+
+        allocatedStart = 0;
+        return false;
+    }
+
+    private static bool TryAllocateBestFit(
+        List<(ulong Start, ulong End)> freeRanges,
+        ulong length,
+        out ulong allocatedStart)
+    {
+        allocatedStart = 0;
+        if (length == 0)
+        {
+            return true;
+        }
+
+        int bestIndex = -1;
+        ulong bestLength = ulong.MaxValue;
+        for (int i = 0; i < freeRanges.Count; i++)
+        {
+            ulong rangeLength = freeRanges[i].End - freeRanges[i].Start;
+            if (rangeLength < length || rangeLength >= bestLength)
+            {
+                continue;
+            }
+
+            bestIndex = i;
+            bestLength = rangeLength;
+        }
+
+        if (bestIndex < 0)
+        {
+            return false;
+        }
+
+        allocatedStart = freeRanges[bestIndex].Start;
+        ulong allocatedEnd = checked(allocatedStart + length);
+        ReserveRange(freeRanges, bestIndex, allocatedStart, allocatedEnd);
+        return true;
+    }
+
+    private static void ReserveRange(
+        List<(ulong Start, ulong End)> freeRanges,
+        int index,
+        ulong reservedStart,
+        ulong reservedEnd)
+    {
+        (ulong Start, ulong End) range = freeRanges[index];
+        if (reservedStart < range.Start || reservedEnd > range.End || reservedStart > reservedEnd)
+        {
+            throw new InvalidOperationException("Attempted to reserve bytes outside a free nIFS payload range.");
+        }
+
+        bool keepLeft = reservedStart > range.Start;
+        bool keepRight = reservedEnd < range.End;
+
+        if (keepLeft && keepRight)
+        {
+            freeRanges[index] = (range.Start, reservedStart);
+            freeRanges.Insert(index + 1, (reservedEnd, range.End));
+        }
+        else if (keepLeft)
+        {
+            freeRanges[index] = (range.Start, reservedStart);
+        }
+        else if (keepRight)
+        {
+            freeRanges[index] = (reservedEnd, range.End);
+        }
+        else
+        {
+            freeRanges.RemoveAt(index);
+        }
+    }
+
+    private static byte[] PatchOriginalBetSection(
+        IIPSArchive archive,
+        IReadOnlyList<IIPSArchiveEntryRecord> modifiedRecords,
+        IIPSArchiveHeaderData sourceHeader)
+    {
+        byte[] originalSection = archive.Metadata.OriginalBetSection;
+        if (originalSection.Length < 12 || (ulong)originalSection.Length != sourceHeader.BetLength)
+        {
+            throw new InvalidDataException("Original BET section was not preserved correctly.");
+        }
+
+        using MemoryStream sectionStream = new MemoryStream(originalSection, writable: false);
+        using BinaryReader sectionReader = new BinaryReader(sectionStream, Encoding.UTF8, leaveOpen: true);
+        uint signature = sectionReader.ReadUInt32();
+        _ = sectionReader.ReadUInt32(); // preserve original section version bytes verbatim
+        uint dataLength = sectionReader.ReadUInt32();
+
+        if (signature != IIPSArchiveFormat.BetSignature ||
+            dataLength > originalSection.Length - 12 ||
+            dataLength < 84)
+        {
+            throw new InvalidDataException(
+                $"Original BET section is malformed: signature=0x{signature:X8}, dataLength={dataLength}, sectionLength={originalSection.Length}.");
+        }
+
+        byte[] betData = new byte[dataLength];
+        Array.Copy(originalSection, 12, betData, 0, betData.Length);
+        IIPSArchiveCrypto.IfsSectionDecrypt(betData);
+
+        uint[] header = new uint[21];
+        for (int i = 0; i < header.Length; i++)
+        {
+            header[i] = BitConverter.ToUInt32(betData, i * sizeof(uint));
+        }
+
+        uint originalEntryCount = header[1];
+        uint totalEntryBits = header[2];
+        uint bitIndexFilePos = header[3];
+        uint bitIndexFileSize = header[4];
+        uint bitIndexCompressedSize = header[5];
+        uint bitIndexFlags = header[6];
+        uint bitIndexMd5 = header[7];
+        // Extra follows the digest. Do not use header[8] here: on Tencent/MHO BET
+        // tables it points at the unknown/digest field and would overlap the MD5.
+        uint bitIndexExtra = bitIndexMd5 + header[13];
+        uint filePosBits = header[9];
+        uint fileSizeBits = header[10];
+        uint compressedSizeBits = header[11];
+        uint flagsBits = header[12];
+        uint md5Bits = header[13];
+        uint extraBits = header[20];
+
+        int entryDataBytes = checked((int)((originalEntryCount * (long)totalEntryBits + 7) / 8));
+        if (84 + entryDataBytes > betData.Length)
+        {
+            throw new InvalidDataException(
+                $"Original BET entry data exceeds section: entries={originalEntryCount}, bitsPerEntry={totalEntryBits}, dataLength={betData.Length}.");
+        }
+
+        foreach (IIPSArchiveEntryRecord record in modifiedRecords)
+        {
+            if (record.Index < 0 || (uint)record.Index >= originalEntryCount)
+            {
+                throw new InvalidOperationException(
+                    $"Original-layout save cannot patch non-original record: {DescribeRecord(record)}");
+            }
+
+            EnsureFits(record.FileOffset, filePosBits, "file offset", record.Index);
+            EnsureFits(record.FileSize, fileSizeBits, "file size", record.Index);
+            EnsureFits(record.CompressedSize, compressedSizeBits, "compressed size", record.Index);
+            EnsureFits(record.Flags, flagsBits, "flags", record.Index);
+            if (extraBits > 0)
+            {
+                EnsureFits(record.Extra, extraBits, "extra", record.Index);
+            }
+
+            long entryBitOffset = 84L * 8L + (long)record.Index * totalEntryBits;
+            ReplaceBits(betData, entryBitOffset + bitIndexFilePos, (int)filePosBits, record.FileOffset);
+            ReplaceBits(betData, entryBitOffset + bitIndexFileSize, (int)fileSizeBits, record.FileSize);
+            ReplaceBits(betData, entryBitOffset + bitIndexCompressedSize, (int)compressedSizeBits, record.CompressedSize);
+            ReplaceBits(betData, entryBitOffset + bitIndexFlags, (int)flagsBits, record.Flags);
+
+            if (md5Bits > 0)
+            {
+                byte[] md5 = record.Md5 ?? new byte[(md5Bits + 7) / 8];
+                ReplaceBits(betData, entryBitOffset + bitIndexMd5, (int)md5Bits, md5);
+            }
+
+            if (extraBits > 0)
+            {
+                ReplaceBits(betData, entryBitOffset + bitIndexExtra, (int)extraBits, record.Extra);
+            }
+        }
+
+        byte[] encryptedData = (byte[])betData.Clone();
+        IIPSArchiveCrypto.IfsSectionEncrypt(encryptedData);
+
+        byte[] patchedSection = (byte[])originalSection.Clone();
+        Array.Copy(encryptedData, 0, patchedSection, 12, encryptedData.Length);
+        return patchedSection;
+    }
+
+    private static void ReplaceBits(byte[] destination, long bitOffset, int bitCount, ulong value)
+    {
+        ClearBits(destination, bitOffset, bitCount);
+        IIPSArchiveFormat.WriteBits(destination, bitOffset, bitCount, value);
+    }
+
+    private static void ReplaceBits(byte[] destination, long bitOffset, int bitCount, ReadOnlySpan<byte> value)
+    {
+        ClearBits(destination, bitOffset, bitCount);
+        for (int i = 0; i < bitCount; i++)
+        {
+            if (i / 8 >= value.Length || (value[i / 8] & (1 << (i % 8))) == 0)
+            {
+                continue;
+            }
+
+            long currentBit = bitOffset + i;
+            int byteIndex = checked((int)(currentBit / 8));
+            int bitIndex = (int)(currentBit % 8);
+            destination[byteIndex] |= (byte)(1 << bitIndex);
+        }
+    }
+
+    private static void ClearBits(byte[] destination, long bitOffset, int bitCount)
+    {
+        for (int i = 0; i < bitCount; i++)
+        {
+            long currentBit = bitOffset + i;
+            int byteIndex = checked((int)(currentBit / 8));
+            int bitIndex = (int)(currentBit % 8);
+            destination[byteIndex] &= (byte)~(1 << bitIndex);
+        }
+    }
+
+    private static string DescribeRecord(IIPSArchiveEntryRecord record)
+    {
+        string path = record.FileName ?? "<unnamed>";
+        bool isListFile = string.Equals(record.FileName, "(listfile)", StringComparison.OrdinalIgnoreCase);
+        bool hasMemoryContent = record.Content != null;
+
+        return
+            $"index={record.Index}, path='{path}', source={record.SourceKind}, " +
+            $"offset=0x{record.FileOffset:X}, originalOffset=0x{record.OriginalFileOffset:X}, " +
+            $"fileSize={record.FileSize}, compressedSize={record.CompressedSize}, originalStored={record.OriginalStoredLength}, " +
+            $"flags=0x{record.Flags:X8}, extra={record.Extra}, hetIndex={record.HetIndex}, " +
+            $"listfile={isListFile}, memoryContent={hasMemoryContent}";
+    }
+
+    private static IIPSArchiveHeaderData ReadSourceHeader(FileStream stream)
+    {
+        stream.Position = 0;
+        using BinaryReader reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+
+        IIPSArchiveHeaderData header = new IIPSArchiveHeaderData
+        {
+            Magic = reader.ReadUInt32(),
+            HeaderLength = reader.ReadUInt32(),
+            FormatVersion = reader.ReadUInt16(),
+            SectorSizeShift = reader.ReadUInt16(),
+            ArchiveSize = reader.ReadUInt64(),
+            BetOffset = reader.ReadUInt64(),
+            HetOffset = reader.ReadUInt64(),
+            Md5TableOffset = reader.ReadUInt64(),
+            BitmapOffset = reader.ReadUInt64(),
+            HetLength = reader.ReadUInt64(),
+            BetLength = reader.ReadUInt64(),
+            Md5TableLength = reader.ReadUInt64(),
+            BitmapLength = reader.ReadUInt64(),
+            Md5PieceSize = reader.ReadUInt32(),
+            RawChunkSize = reader.ReadUInt32(),
+            Md5PatchBaseTag = reader.ReadBytes(16),
+            Md5PatchedTag = reader.ReadBytes(16),
+            BetMd5 = Convert.ToHexString(reader.ReadBytes(16)).ToLowerInvariant(),
+            HetMd5 = Convert.ToHexString(reader.ReadBytes(16)).ToLowerInvariant(),
+            HeaderMd5 = Convert.ToHexString(reader.ReadBytes(16)).ToLowerInvariant(),
+        };
+
+        if (header.Magic != IIPSArchiveFormat.Magic || header.HeaderLength != IIPSArchiveFormat.HeaderLength)
+        {
+            throw new InvalidDataException("Source archive does not have the expected nIFS header.");
+        }
+
+        return header;
+    }
+
+    private static void PadToAlignment(FileStream output, uint alignment)
+    {
+        if (alignment == 0)
+        {
+            return;
+        }
+
+        long remainder = output.Position % alignment;
+        if (remainder == 0)
+        {
+            return;
+        }
+
+        long padding = alignment - remainder;
+        byte[] zeroes = new byte[8192];
+        while (padding > 0)
+        {
+            int count = (int)Math.Min(padding, zeroes.Length);
+            output.Write(zeroes, 0, count);
+            padding -= count;
+        }
+    }
+
+    private static byte[] BuildRawChunkMd5Table(FileStream output, ulong archiveSize, uint pieceSize)
+    {
+        ulong chunkCount = archiveSize / pieceSize;
+        using MemoryStream table = new MemoryStream(checked((int)((chunkCount + 1) * 16UL)));
+        byte[] buffer = new byte[pieceSize];
+
+        for (ulong chunkIndex = 0; chunkIndex < chunkCount; chunkIndex++)
+        {
+            output.Position = checked((long)(chunkIndex * pieceSize));
+            int totalRead = 0;
+            while (totalRead < buffer.Length)
+            {
+                int read = output.Read(buffer, totalRead, buffer.Length - totalRead);
+                if (read == 0)
+                {
+                    throw new EndOfStreamException($"Unexpected EOF while hashing raw chunk {chunkIndex}.");
+                }
+
+                totalRead += read;
+            }
+
+            byte[] digest = MD5.HashData(buffer);
+            table.Write(digest, 0, digest.Length);
+        }
+
+        byte[] chunkHashes = table.ToArray();
+        byte[] tableDigest = MD5.HashData(chunkHashes);
+        table.Write(tableDigest, 0, tableDigest.Length);
+        return table.ToArray();
     }
 
     private static List<IIPSArchiveEntryRecord> PrepareRecords(IIPSArchive archive, IIPSArchiveSaveOptions options)
@@ -179,7 +798,6 @@ internal static class IIPSArchiveWriter
         record.NameHash = EnsureNameHash(record);
         record.FileSize = (ulong)content.Length;
         record.Md5 = MD5.HashData(content);
-        record.Extra = 0;
 
         if (content.Length == 0)
         {
@@ -364,7 +982,99 @@ internal static class IIPSArchiveWriter
         return ms.ToArray();
     }
 
-    private static byte[] BuildBetData(List<IIPSArchiveEntryRecord> records)
+    private static byte[] BuildBetData(List<IIPSArchiveEntryRecord> records, uint[] template)
+    {
+        if (template.Length == 21 && template[1] == (uint)records.Count)
+        {
+            uint[] header = (uint[])template.Clone();
+            uint totalEntryBits = header[2];
+            uint bitIndexFilePos = header[3];
+            uint bitIndexFileSize = header[4];
+            uint bitIndexCompressedSize = header[5];
+            uint bitIndexFlags = header[6];
+            uint bitIndexMd5 = header[7];
+            uint filePosBits = header[9];
+            uint fileSizeBits = header[10];
+            uint compressedSizeBits = header[11];
+            uint flagsBits = header[12];
+            uint md5Bits = header[13];
+            uint betHashStrideBits = header[15];
+            uint betHashBits = header[17];
+            uint extraBits = header[20];
+            // Tencent's BET field[8] is not the start of Extra. In the MHO archives it
+            // aliases the unknown/MD5 field start. The reader has always decoded Extra
+            // immediately after the per-entry 128-bit digest, which is also what the
+            // original eng_patch.ifs layout proves. Using header[8] here overwrites the
+            // first 64 bits of the digest with Extra.
+            uint bitIndexExtra = bitIndexMd5 + md5Bits;
+
+            int entryDataBytes = checked((int)((records.Count * (long)totalEntryBits + 7) / 8));
+            int declaredDataBytes = header[0] >= 84 ? checked((int)header[0] - 84) : 0;
+            int hashDataBytes = declaredDataBytes >= entryDataBytes
+                ? declaredDataBytes - entryDataBytes
+                : checked((int)((records.Count * (long)betHashStrideBits + 7) / 8));
+
+            byte[] entryData = new byte[entryDataBytes];
+            byte[] hashData = new byte[hashDataBytes];
+
+            for (int i = 0; i < records.Count; i++)
+            {
+                IIPSArchiveEntryRecord record = records[i];
+                EnsureFits(record.FileOffset, filePosBits, "file offset", record.Index);
+                EnsureFits(record.FileSize, fileSizeBits, "file size", record.Index);
+                EnsureFits(record.CompressedSize, compressedSizeBits, "compressed size", record.Index);
+                EnsureFits(record.Flags, flagsBits, "flags", record.Index);
+                if (extraBits > 0)
+                {
+                    EnsureFits(record.Extra, extraBits, "extra", record.Index);
+                }
+
+                long entryBitOffset = (long)i * totalEntryBits;
+                IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexFilePos, (int)filePosBits, record.FileOffset);
+                IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexFileSize, (int)fileSizeBits, record.FileSize);
+                IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexCompressedSize, (int)compressedSizeBits, record.CompressedSize);
+                IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexFlags, (int)flagsBits, record.Flags);
+
+                if (md5Bits > 0)
+                {
+                    byte[] md5 = record.Md5 ?? new byte[(md5Bits + 7) / 8];
+                    IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexMd5, md5);
+                }
+
+                if (extraBits > 0)
+                {
+                    IIPSArchiveFormat.WriteBits(entryData, entryBitOffset + bitIndexExtra, (int)extraBits, record.Extra);
+                }
+
+                IIPSArchiveFormat.WriteBits(
+                    hashData,
+                    (long)i * betHashStrideBits,
+                    (int)betHashBits,
+                    record.NameHash & 0x00FFFFFFFFFFFFFFUL);
+            }
+
+            using MemoryStream ms = new MemoryStream();
+            using BinaryWriter writer = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+            for (int i = 0; i < header.Length; i++)
+            {
+                writer.Write(header[i]);
+            }
+            writer.Write(entryData);
+            writer.Write(hashData);
+
+            if (header[0] != 0 && ms.Length != header[0])
+            {
+                throw new InvalidDataException(
+                    $"BET template size mismatch: header={header[0]}, rebuilt={ms.Length}.");
+            }
+
+            return ms.ToArray();
+        }
+
+        return BuildBetDataFallback(records);
+    }
+
+    private static byte[] BuildBetDataFallback(List<IIPSArchiveEntryRecord> records)
     {
         ulong maxFileOffset = records.Count == 0 ? 0 : records.Max(record => record.FileOffset);
         ulong maxFileSize = records.Count == 0 ? 0 : records.Max(record => record.FileSize);
@@ -428,6 +1138,21 @@ internal static class IIPSArchiveWriter
         return ms.ToArray();
     }
 
+    private static void EnsureFits(ulong value, uint bits, string field, int recordIndex)
+    {
+        if (bits >= 64)
+        {
+            return;
+        }
+
+        ulong max = bits == 0 ? 0 : (1UL << (int)bits) - 1;
+        if (value > max)
+        {
+            throw new InvalidDataException(
+                $"BET {field} for record {recordIndex} ({value}) does not fit original {bits}-bit field.");
+        }
+    }
+
     private static bool CanPreserveStoredBytes(IIPSArchiveEntryRecord record, IIPSArchiveSaveOptions options)
     {
         return options.PreserveUnchangedEntries &&
@@ -470,6 +1195,8 @@ internal static class IIPSArchiveWriter
             FileOffset = record.FileOffset,
             FileSize = record.FileSize,
             CompressedSize = record.CompressedSize,
+            OriginalFileOffset = record.OriginalFileOffset,
+            OriginalStoredLength = record.OriginalStoredLength,
             Flags = record.Flags,
             NameHash = record.NameHash,
             HetIndex = record.HetIndex,
