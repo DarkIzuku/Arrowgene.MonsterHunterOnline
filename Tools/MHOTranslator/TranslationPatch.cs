@@ -842,7 +842,11 @@ internal static class TranslationPatch
             }
 
             byte[] data = tag.Data.ToArray();
-            byte[] patchedData = PatchSwfTagData(tag.Code, data, translations, out int tagReplacements);
+            byte[] patchedData = PatchSwfTagData(tag.Code, data, translations, out int tagReplacements, out List<string> tagSources);
+            foreach (string source in tagSources)
+            {
+                Console.WriteLine($"[SWF-MATCH] tag={tag.Code} source={EscapeForLog(source)}");
+            }
             replacements += tagReplacements;
 
             int originalTagLength = tag.HeaderLength + checked((int)tag.Length);
@@ -909,23 +913,32 @@ internal static class TranslationPatch
         ushort code,
         byte[] data,
         IReadOnlyDictionary<string, string> translations,
-        out int replacements)
+        out int replacements,
+        out List<string> matchedSources)
+    {
+        matchedSources = new List<string>();
+        byte[] result = code switch
+        {
+            82 => PatchDoAbc(data, translations, out replacements, matchedSources),
+            43 or 77 => PatchSingleSwfStringTag(data, 0, translations, out replacements, matchedSources),
+            56 or 76 => PatchSymbolStringMap(data, translations, out replacements, matchedSources),
+            88 => PatchFontNameTag(data, translations, out replacements, matchedSources),
+            _ => ReturnUnchanged(data, out replacements),
+        };
+        return result;
+    }
+
+    private static byte[] ReturnUnchanged(byte[] data, out int replacements)
     {
         replacements = 0;
-        return code switch
-        {
-            82 => PatchDoAbc(data, translations, out replacements),
-            43 or 77 => PatchSingleSwfStringTag(data, 0, translations, out replacements),
-            56 or 76 => PatchSymbolStringMap(data, translations, out replacements),
-            88 => PatchFontNameTag(data, translations, out replacements),
-            _ => data,
-        };
+        return data;
     }
 
     private static byte[] PatchDoAbc(
         byte[] tagData,
         IReadOnlyDictionary<string, string> translations,
-        out int replacements)
+        out int replacements,
+        List<string> matchedSources)
     {
         replacements = 0;
         if (tagData.Length < 5)
@@ -993,6 +1006,7 @@ internal static class TranslationPatch
                 {
                     output = Utf8NoBom.GetBytes(translation);
                     replacements++;
+                    matchedSources.Add(source);
                 }
             }
             catch (DecoderFallbackException)
@@ -1030,7 +1044,8 @@ internal static class TranslationPatch
         byte[] data,
         int stringOffset,
         IReadOnlyDictionary<string, string> translations,
-        out int replacements)
+        out int replacements,
+        List<string> matchedSources)
     {
         replacements = 0;
         if (!TryReadNullString(data, stringOffset, out string source, out int after))
@@ -1044,6 +1059,7 @@ internal static class TranslationPatch
         }
 
         replacements = 1;
+        matchedSources.Add(source);
         using MemoryStream output = new();
         output.Write(data, 0, stringOffset);
         byte[] translated = Utf8NoBom.GetBytes(translation);
@@ -1056,7 +1072,8 @@ internal static class TranslationPatch
     private static byte[] PatchSymbolStringMap(
         byte[] data,
         IReadOnlyDictionary<string, string> translations,
-        out int replacements)
+        out int replacements,
+        List<string> matchedSources)
     {
         replacements = 0;
         if (data.Length < 2)
@@ -1091,6 +1108,7 @@ internal static class TranslationPatch
             if (value != source)
             {
                 replacements++;
+                matchedSources.Add(source);
             }
 
             byte[] encoded = Utf8NoBom.GetBytes(value);
@@ -1110,7 +1128,8 @@ internal static class TranslationPatch
     private static byte[] PatchFontNameTag(
         byte[] data,
         IReadOnlyDictionary<string, string> translations,
-        out int replacements)
+        out int replacements,
+        List<string> matchedSources)
     {
         replacements = 0;
         if (data.Length < 3)
@@ -1137,6 +1156,7 @@ internal static class TranslationPatch
             if (value != source)
             {
                 replacements++;
+                matchedSources.Add(source);
             }
 
             byte[] encoded = Utf8NoBom.GetBytes(value);
@@ -1349,6 +1369,27 @@ internal static class TranslationPatch
             return text;
         }
 
+        return output.ToString();
+    }
+
+    private static string EscapeForLog(string value)
+    {
+        StringBuilder output = new();
+        foreach (Rune rune in value.EnumerateRunes())
+        {
+            if (rune.Value >= 0x20 && rune.Value <= 0x7E)
+            {
+                output.Append((char)rune.Value);
+            }
+            else if (rune.Value <= 0xFFFF)
+            {
+                output.Append($"\\u{rune.Value:X4}");
+            }
+            else
+            {
+                output.Append($"\\U{rune.Value:X8}");
+            }
+        }
         return output.ToString();
     }
 
