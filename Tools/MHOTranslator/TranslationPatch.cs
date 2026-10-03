@@ -209,7 +209,10 @@ internal static class TranslationPatch
                     outputIfs,
                     new IIPSArchiveSaveOptions
                     {
-                        IncludeListFile = true,
+                        // For the compatibility smoke test, preserve the original
+                        // (listfile) entry exactly. Rebuilding it would change one
+                        // archive payload and weaken the no-op test.
+                        IncludeListFile = false,
                         PreserveUnchangedEntries = true,
                     });
             }
