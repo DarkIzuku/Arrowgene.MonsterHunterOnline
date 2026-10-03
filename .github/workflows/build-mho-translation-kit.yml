@@ -38,26 +38,18 @@ jobs:
       - name: Build MHOTranslator
         run: dotnet publish Tools/MHOTranslator/MHOTranslator.csproj -c Release -r win-x64 --self-contained true -o artifacts/translator
 
-      - name: Configure Win32 extractor
-        run: cmake -S Tools/MHOIFSExtractor -B build/MHOIFSExtractor -A Win32
-
-      - name: Build Win32 extractor
-        run: cmake --build build/MHOIFSExtractor --config Release --parallel
-
       - name: Assemble kit
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force artifacts/MHOTranslationKit | Out-Null
           Copy-Item artifacts/translator/* artifacts/MHOTranslationKit/ -Recurse
-          Copy-Item build/MHOIFSExtractor/Release/MHOIFSExtractor.exe artifacts/MHOTranslationKit/
           Copy-Item Tools/MHOTranslationKit/ExtractAndScan.ps1 artifacts/MHOTranslationKit/
           Copy-Item Tools/MHOTranslationKit/README.md artifacts/MHOTranslationKit/
-          Copy-Item Tools/MHOIFSExtractor/README.md artifacts/MHOTranslationKit/IFS-EXTRACTOR-README.md
           @"
           Monster Hunter Online Translation Kit
 
-          IFS2.dll and game assets are intentionally NOT included.
-          Use the files from your own MHO client.
+          This build uses Arrowgene's managed nIFS parser.
+          Tencent IFS2.dll is not required. Game assets are not included.
           "@ | Set-Content artifacts/MHOTranslationKit/READ-ME-FIRST.txt
 
       - name: Upload kit
