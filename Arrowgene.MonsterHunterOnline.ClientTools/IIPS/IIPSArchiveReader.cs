@@ -11,7 +11,7 @@ internal static class IIPSArchiveReader
 {
     public static void Load(IIPSArchive archive, string path, IIPSArchiveOpenOptions options)
     {
-        FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, options.FileShare);
         BinaryReader reader = new BinaryReader(stream);
 
         try
