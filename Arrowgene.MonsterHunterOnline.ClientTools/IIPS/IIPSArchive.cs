@@ -328,6 +328,7 @@ public sealed class IIPSArchive : IDisposable
         Metadata.Md5PatchBaseTag = (byte[])metadata.Md5PatchBaseTag.Clone();
         Metadata.Md5PatchedTag = (byte[])metadata.Md5PatchedTag.Clone();
         Metadata.OriginalHetSection = (byte[])metadata.OriginalHetSection.Clone();
+        Metadata.OriginalBetSection = (byte[])metadata.OriginalBetSection.Clone();
         Metadata.OriginalBetHeader = (uint[])metadata.OriginalBetHeader.Clone();
 
         _records.Clear();

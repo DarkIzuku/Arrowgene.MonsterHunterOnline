@@ -40,6 +40,7 @@ public sealed class IIPSArchiveMetadata
     internal byte[] Md5PatchBaseTag { get; set; } = new byte[16];
     internal byte[] Md5PatchedTag { get; set; } = new byte[16];
     internal byte[] OriginalHetSection { get; set; } = Array.Empty<byte>();
+    internal byte[] OriginalBetSection { get; set; } = Array.Empty<byte>();
     internal uint[] OriginalBetHeader { get; set; } = Array.Empty<uint>();
 }
 

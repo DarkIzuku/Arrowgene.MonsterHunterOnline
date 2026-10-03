@@ -19,6 +19,7 @@ internal static class IIPSArchiveReader
             IIPSArchiveHeaderData header = ReadHeader(stream, reader, options.VerifyChecksums, archive.ArchiveLogger);
 
             byte[] originalHetSection = ReadBytesAt(stream, reader, (long)header.HetOffset, (int)header.HetLength);
+            byte[] originalBetSection = ReadBytesAt(stream, reader, (long)header.BetOffset, (int)header.BetLength);
             stream.Position = (long)header.HetOffset;
             uint hetMagic = reader.ReadUInt32();
             uint hetVersion = reader.ReadUInt32();
@@ -47,6 +48,7 @@ internal static class IIPSArchiveReader
                 Md5PatchBaseTag = (byte[])header.Md5PatchBaseTag.Clone(),
                 Md5PatchedTag = (byte[])header.Md5PatchedTag.Clone(),
                 OriginalHetSection = originalHetSection,
+                OriginalBetSection = originalBetSection,
                 OriginalBetHeader = originalBetHeader,
             };
 
