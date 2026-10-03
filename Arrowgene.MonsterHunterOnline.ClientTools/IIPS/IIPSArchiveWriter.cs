@@ -45,25 +45,36 @@ internal static class IIPSArchiveWriter
                 ulong betOffset = (ulong)output.Position;
                 output.Write(betSection, 0, betSection.Length);
 
+                uint md5PieceSize = archive.Metadata.Md5PieceSize != 0 ? archive.Metadata.Md5PieceSize : 0x4000u;
+                uint rawChunkSize = archive.Metadata.RawChunkSize != 0 ? archive.Metadata.RawChunkSize : md5PieceSize;
+                PadToAlignment(output, md5PieceSize);
+
+                ulong archiveSize = (ulong)output.Position;
+                ulong chunkCount = archiveSize / md5PieceSize;
+                ulong md5TableLength = checked((chunkCount + 1) * 16UL);
+                ulong md5TableOffset = archiveSize;
+                ulong bitmapOffset = checked(md5TableOffset + md5TableLength);
+                ulong bitmapLength = chunkCount;
+
                 IIPSArchiveHeaderData header = new IIPSArchiveHeaderData
                 {
                     Magic = IIPSArchiveFormat.Magic,
                     HeaderLength = IIPSArchiveFormat.HeaderLength,
                     FormatVersion = archive.Metadata.FormatVersion,
                     SectorSizeShift = archive.Metadata.SectorSizeShift,
-                    ArchiveSize = (ulong)output.Position,
+                    ArchiveSize = archiveSize,
                     BetOffset = betOffset,
                     HetOffset = hetOffset,
-                    Md5TableOffset = 0,
-                    BitmapOffset = 0,
+                    Md5TableOffset = md5TableOffset,
+                    BitmapOffset = bitmapOffset,
                     HetLength = (ulong)hetSection.Length,
                     BetLength = (ulong)betSection.Length,
-                    Md5TableLength = 0,
-                    BitmapLength = 0,
-                    Md5PieceSize = 0,
-                    RawChunkSize = 0,
-                    Md5PatchBaseTag = new byte[16],
-                    Md5PatchedTag = new byte[16],
+                    Md5TableLength = md5TableLength,
+                    BitmapLength = bitmapLength,
+                    Md5PieceSize = md5PieceSize,
+                    RawChunkSize = rawChunkSize,
+                    Md5PatchBaseTag = (byte[])archive.Metadata.Md5PatchBaseTag.Clone(),
+                    Md5PatchedTag = (byte[])archive.Metadata.Md5PatchedTag.Clone(),
                     BetMd5 = IIPSArchiveCrypto.Md5(betSection),
                     HetMd5 = IIPSArchiveCrypto.Md5(hetSection),
                 };
@@ -71,6 +82,16 @@ internal static class IIPSArchiveWriter
                 byte[] headerBytes = IIPSArchiveSerialization.BuildHeader(header);
                 output.Position = 0;
                 output.Write(headerBytes, 0, headerBytes.Length);
+                output.Flush();
+
+                byte[] md5Table = BuildRawChunkMd5Table(output, archiveSize, md5PieceSize);
+                output.Position = checked((long)md5TableOffset);
+                output.Write(md5Table, 0, md5Table.Length);
+
+                byte[] bitmap = new byte[checked((int)bitmapLength)];
+                Array.Fill(bitmap, (byte)0x01);
+                output.Write(bitmap, 0, bitmap.Length);
+                output.SetLength(output.Position);
             }
 
             bool overwriteCurrentSource = archive.CurrentSourcePath != null &&
