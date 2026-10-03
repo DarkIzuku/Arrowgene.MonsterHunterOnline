@@ -1,4 +1,5 @@
 using Arrowgene.MonsterHunterOnline.ClientTools.IIPS;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -200,6 +201,9 @@ static int ScanCommand(string[] args)
 
     List<ScanRow> rows = new();
     int examined = 0;
+    int textFiles = 0;
+    int swfFiles = 0;
+    int binaryUtfFiles = 0;
     int skippedLarge = 0;
     int skippedBinary = 0;
     int unreadable = 0;
@@ -223,73 +227,319 @@ static int ScanCommand(string[] args)
             continue;
         }
 
-        if (!scanAll && !textExtensions.Contains(info.Extension))
+        if (!scanAll && !textExtensions.Contains(info.Extension) &&
+            !info.Extension.Equals(".swf", StringComparison.OrdinalIgnoreCase))
         {
             continue;
         }
 
         examined++;
 
-        if (!TryReadText(file, out string text, out string encodingName))
+        byte[] bytes;
+        try
         {
-            skippedBinary++;
+            bytes = File.ReadAllBytes(file);
+        }
+        catch
+        {
+            unreadable++;
             continue;
         }
 
         string relative = Path.GetRelativePath(root, file).Replace('\\', '/');
-        string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
 
-        for (int i = 0; i < lines.Length; i++)
+        if (TryDecodeSwf(bytes, out byte[] swfPayload, out string swfKind))
         {
-            string line = lines[i];
-            if (!ContainsCjk(line))
+            swfFiles++;
+            AddBinaryCjkHits(rows, relative, swfPayload, $"swf-{swfKind}");
+            continue;
+        }
+
+        if (TryReadText(bytes, out string text, out string encodingName))
+        {
+            textFiles++;
+            string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+
+            for (int i = 0; i < lines.Length; i++)
             {
-                continue;
+                string line = lines[i];
+                if (!ContainsCjk(line))
+                {
+                    continue;
+                }
+
+                string source = NormalizeCandidate(line);
+                if (source.Length == 0)
+                {
+                    continue;
+                }
+
+                rows.Add(new ScanRow(relative, $"line:{i + 1}", "text", encodingName, source, 1, "", ""));
             }
 
-            rows.Add(new ScanRow(relative, i + 1, encodingName, line.Trim(), ""));
+            continue;
         }
+
+        if (scanAll)
+        {
+            int before = rows.Count;
+            AddBinaryCjkHits(rows, relative, bytes, "binary");
+            if (rows.Count > before)
+            {
+                binaryUtfFiles++;
+                continue;
+            }
+        }
+
+        skippedBinary++;
     }
+
+    // Collapse duplicate strings from the same source file/kind. SWFs often
+    // contain the same ActionScript/UI string multiple times.
+    List<ScanRow> collapsed = rows
+        .GroupBy(r => new { r.Path, r.SourceKind, r.Encoding, r.Source })
+        .Select(g =>
+        {
+            ScanRow first = g.First();
+            int occurrences = g.Sum(x => x.Occurrences);
+            string locations = string.Join(
+                ";",
+                g.Select(x => x.Location)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .Distinct()
+                    .Take(12));
+            return first with { Location = locations, Occurrences = occurrences };
+        })
+        .OrderBy(r => r.Path, StringComparer.OrdinalIgnoreCase)
+        .ThenByDescending(r => r.Occurrences)
+        .ThenBy(r => r.Source, StringComparer.Ordinal)
+        .ToList();
 
     Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(output))!);
     using (StreamWriter writer = new(output, false, new UTF8Encoding(true)))
     {
-        writer.WriteLine("path,line,encoding,source,translation");
-        foreach (ScanRow row in rows)
+        writer.WriteLine("path,location,source_kind,encoding,source,occurrences,translation,notes");
+        foreach (ScanRow row in collapsed)
         {
             writer.WriteLine(string.Join(",",
                 Csv(row.Path),
-                row.Line.ToString(),
+                Csv(row.Location),
+                Csv(row.SourceKind),
                 Csv(row.Encoding),
                 Csv(row.Source),
-                Csv(row.Translation)));
+                row.Occurrences.ToString(),
+                Csv(row.Translation),
+                Csv(row.Notes)));
         }
     }
 
-    Console.WriteLine($"Root:           {root}");
-    Console.WriteLine($"Files examined: {examined}");
-    Console.WriteLine($"CJK strings:    {rows.Count}");
-    Console.WriteLine($"Skipped large:  {skippedLarge}");
-    Console.WriteLine($"Skipped binary: {skippedBinary}");
-    Console.WriteLine($"Unreadable:     {unreadable}");
-    Console.WriteLine($"Output:         {Path.GetFullPath(output)}");
+    Console.WriteLine($"Root:              {root}");
+    Console.WriteLine($"Files examined:    {examined}");
+    Console.WriteLine($"Text files:        {textFiles}");
+    Console.WriteLine($"SWF files:         {swfFiles}");
+    Console.WriteLine($"Other binary hits: {binaryUtfFiles}");
+    Console.WriteLine($"CJK catalog rows:  {collapsed.Count}");
+    Console.WriteLine($"CJK occurrences:   {collapsed.Sum(x => x.Occurrences)}");
+    Console.WriteLine($"Skipped large:     {skippedLarge}");
+    Console.WriteLine($"Skipped binary:    {skippedBinary}");
+    Console.WriteLine($"Unreadable:        {unreadable}");
+    Console.WriteLine($"Output:            {Path.GetFullPath(output)}");
 
-    var topFiles = rows.GroupBy(r => r.Path)
-        .OrderByDescending(g => g.Count())
-        .Take(15)
+    var topFiles = collapsed.GroupBy(r => r.Path)
+        .Select(g => new { Path = g.Key, Count = g.Count(), Occurrences = g.Sum(x => x.Occurrences) })
+        .OrderByDescending(x => x.Count)
+        .Take(20)
         .ToList();
 
     if (topFiles.Count > 0)
     {
         Console.WriteLine();
-        Console.WriteLine("Top files by untranslated CJK lines:");
-        foreach (var group in topFiles)
+        Console.WriteLine("Top files by remaining CJK catalog rows:");
+        foreach (var item in topFiles)
         {
-            Console.WriteLine($"{group.Count(),6}  {group.Key}");
+            Console.WriteLine($"{item.Count,6} rows  {item.Occurrences,6} hits  {item.Path}");
         }
     }
 
     return 0;
+}
+
+static bool TryDecodeSwf(byte[] bytes, out byte[] payload, out string kind)
+{
+    payload = Array.Empty<byte>();
+    kind = "";
+
+    if (bytes.Length < 8)
+    {
+        return false;
+    }
+
+    if (bytes[0] == (byte)'F' && bytes[1] == (byte)'W' && bytes[2] == (byte)'S')
+    {
+        payload = bytes;
+        kind = "fws";
+        return true;
+    }
+
+    if (bytes[0] == (byte)'C' && bytes[1] == (byte)'W' && bytes[2] == (byte)'S')
+    {
+        try
+        {
+            using MemoryStream input = new(bytes, 8, bytes.Length - 8, writable: false);
+            using ZLibStream zlib = new(input, CompressionMode.Decompress);
+            using MemoryStream output = new();
+
+            // Keep a synthetic uncompressed SWF header so diagnostics and
+            // downstream tooling can still recognize the payload shape.
+            output.WriteByte((byte)'F');
+            output.WriteByte((byte)'W');
+            output.WriteByte((byte)'S');
+            output.WriteByte(bytes[3]);
+            output.Write(bytes, 4, 4);
+            zlib.CopyTo(output);
+
+            payload = output.ToArray();
+            kind = "cws";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // ZWS uses LZMA. We identify it so it is not mistaken for arbitrary text,
+    // but .NET does not provide an in-box LZMA decoder.
+    if (bytes[0] == (byte)'Z' && bytes[1] == (byte)'W' && bytes[2] == (byte)'S')
+    {
+        kind = "zws";
+        return false;
+    }
+
+    return false;
+}
+
+static void AddBinaryCjkHits(List<ScanRow> rows, string relative, byte[] bytes, string sourceKind)
+{
+    AddDecodedBinaryHits(rows, relative, bytes, sourceKind, Encoding.UTF8, "utf-8");
+
+    // Some old UI resources contain UTF-16LE strings embedded in binary data.
+    // Only keep reasonably printable candidates to avoid random-byte noise.
+    AddDecodedBinaryHits(rows, relative, bytes, sourceKind, Encoding.Unicode, "utf-16le");
+}
+
+static void AddDecodedBinaryHits(
+    List<ScanRow> rows,
+    string relative,
+    byte[] bytes,
+    string sourceKind,
+    Encoding encoding,
+    string encodingName)
+{
+    string decoded;
+    try
+    {
+        decoded = encoding.GetString(bytes);
+    }
+    catch
+    {
+        return;
+    }
+
+    int start = 0;
+    for (int i = 0; i <= decoded.Length; i++)
+    {
+        bool boundary = i == decoded.Length || IsBinaryStringBoundary(decoded[i]);
+        if (!boundary)
+        {
+            continue;
+        }
+
+        int length = i - start;
+        if (length > 0)
+        {
+            string candidate = NormalizeCandidate(decoded.Substring(start, length));
+            if (candidate.Length >= 1 &&
+                candidate.Length <= 512 &&
+                ContainsCjk(candidate) &&
+                LooksLikeUsefulBinaryString(candidate))
+            {
+                rows.Add(new ScanRow(
+                    relative,
+                    $"char:{start}",
+                    sourceKind,
+                    encodingName,
+                    candidate,
+                    1,
+                    "",
+                    ""));
+            }
+        }
+
+        start = i + 1;
+    }
+}
+
+static bool IsBinaryStringBoundary(char c)
+{
+    return c == '\0' ||
+           c == '\uFFFD' ||
+           (char.IsControl(c) && c is not '\t') ||
+           char.IsSurrogate(c);
+}
+
+static bool LooksLikeUsefulBinaryString(string value)
+{
+    if (value.Length == 0)
+    {
+        return false;
+    }
+
+    int visible = 0;
+    int weird = 0;
+
+    foreach (Rune rune in value.EnumerateRunes())
+    {
+        int v = rune.Value;
+        if (Rune.IsControl(rune))
+        {
+            weird += 3;
+        }
+        else if ((v >= 0x20 && v <= 0x7E) || ContainsCjkRune(v) || Rune.IsLetterOrDigit(rune) || Rune.IsPunctuation(rune) || Rune.IsWhiteSpace(rune))
+        {
+            visible++;
+        }
+        else
+        {
+            weird++;
+        }
+    }
+
+    return visible > 0 && weird <= Math.Max(2, visible / 3);
+}
+
+static string NormalizeCandidate(string value)
+{
+    StringBuilder sb = new(value.Length);
+    bool previousSpace = false;
+
+    foreach (char c in value.Trim())
+    {
+        if (char.IsWhiteSpace(c))
+        {
+            if (!previousSpace)
+            {
+                sb.Append(' ');
+                previousSpace = true;
+            }
+            continue;
+        }
+
+        previousSpace = false;
+        sb.Append(c);
+    }
+
+    return sb.ToString().Trim();
 }
 
 static int CompareCommand(string[] args)
@@ -387,20 +637,10 @@ static string Sha256(string file)
     return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
 }
 
-static bool TryReadText(string file, out string text, out string encodingName)
+static bool TryReadText(byte[] bytes, out string text, out string encodingName)
 {
     text = "";
     encodingName = "";
-
-    byte[] bytes;
-    try
-    {
-        bytes = File.ReadAllBytes(file);
-    }
-    catch
-    {
-        return false;
-    }
 
     if (bytes.Length == 0)
     {
@@ -495,20 +735,24 @@ static bool ContainsCjk(string value)
 {
     foreach (Rune rune in value.EnumerateRunes())
     {
-        int v = rune.Value;
-        if ((v >= 0x3400 && v <= 0x4DBF) ||
-            (v >= 0x4E00 && v <= 0x9FFF) ||
-            (v >= 0xF900 && v <= 0xFAFF) ||
-            (v >= 0x3040 && v <= 0x309F) ||
-            (v >= 0x30A0 && v <= 0x30FF) ||
-            (v >= 0xFF66 && v <= 0xFF9D) ||
-            (v >= 0x20000 && v <= 0x2FA1F))
+        if (ContainsCjkRune(rune.Value))
         {
             return true;
         }
     }
 
     return false;
+}
+
+static bool ContainsCjkRune(int v)
+{
+    return (v >= 0x3400 && v <= 0x4DBF) ||
+           (v >= 0x4E00 && v <= 0x9FFF) ||
+           (v >= 0xF900 && v <= 0xFAFF) ||
+           (v >= 0x3040 && v <= 0x309F) ||
+           (v >= 0x30A0 && v <= 0x30FF) ||
+           (v >= 0xFF66 && v <= 0xFF9D) ||
+           (v >= 0x20000 && v <= 0x2FA1F);
 }
 
 static string? GetOption(string[] args, string name)
@@ -534,5 +778,13 @@ static string Csv(string value)
     return value.IndexOfAny([',', '"', '\r', '\n']) >= 0 ? string.Concat('"', value, '"') : value;
 }
 
-readonly record struct ScanRow(string Path, int Line, string Encoding, string Source, string Translation);
+readonly record struct ScanRow(
+    string Path,
+    string Location,
+    string SourceKind,
+    string Encoding,
+    string Source,
+    int Occurrences,
+    string Translation,
+    string Notes);
 readonly record struct CompareRow(string Path, string State, string OriginalSha256, string PatchedSha256);
