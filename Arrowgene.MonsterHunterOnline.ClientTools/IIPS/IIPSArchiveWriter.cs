@@ -512,7 +512,9 @@ internal static class IIPSArchiveWriter
         uint bitIndexCompressedSize = header[5];
         uint bitIndexFlags = header[6];
         uint bitIndexMd5 = header[7];
-        uint bitIndexExtra = header[8] != 0 ? header[8] : bitIndexMd5 + header[13];
+        // Extra follows the digest. Do not use header[8] here: on Tencent/MHO BET
+        // tables it points at the unknown/digest field and would overlap the MD5.
+        uint bitIndexExtra = bitIndexMd5 + header[13];
         uint filePosBits = header[9];
         uint fileSizeBits = header[10];
         uint compressedSizeBits = header[11];
@@ -999,9 +1001,12 @@ internal static class IIPSArchiveWriter
             uint betHashStrideBits = header[15];
             uint betHashBits = header[17];
             uint extraBits = header[20];
-            uint bitIndexExtra = header[8] != 0
-                ? header[8]
-                : bitIndexMd5 + md5Bits;
+            // Tencent's BET field[8] is not the start of Extra. In the MHO archives it
+            // aliases the unknown/MD5 field start. The reader has always decoded Extra
+            // immediately after the per-entry 128-bit digest, which is also what the
+            // original eng_patch.ifs layout proves. Using header[8] here overwrites the
+            // first 64 bits of the digest with Extra.
+            uint bitIndexExtra = bitIndexMd5 + md5Bits;
 
             int entryDataBytes = checked((int)((records.Count * (long)totalEntryBits + 7) / 8));
             int declaredDataBytes = header[0] >= 84 ? checked((int)header[0] - 84) : 0;
