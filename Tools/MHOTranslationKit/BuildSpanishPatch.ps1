@@ -18,14 +18,18 @@ $ErrorActionPreference = "Stop"
 
 $kit = Split-Path -Parent $MyInvocation.MyCommand.Path
 $translator = Join-Path $kit "MHOTranslator.exe"
-$catalogDir = Join-Path $kit "es-ES"
+$catalogDir = Join-Path $kit "Translation\es-ES"
+if (-not (Test-Path $catalogDir)) {
+    # Backward compatibility with kits produced before the canonical Translation\es-ES layout.
+    $catalogDir = Join-Path $kit "es-ES"
+}
 
 if (-not (Test-Path $translator)) {
     throw "MHOTranslator.exe was not found beside this script."
 }
 
 if (-not (Test-Path $catalogDir)) {
-    throw "The es-ES catalog directory was not found beside this script."
+    throw "The Spanish catalog directory was not found. Expected Translation\es-ES (or legacy es-ES) beside this script."
 }
 
 $BaseIfs = (Resolve-Path $BaseIfs).Path

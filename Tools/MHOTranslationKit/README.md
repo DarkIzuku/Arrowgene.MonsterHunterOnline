@@ -57,7 +57,7 @@ user's own client.
 
 The kit includes the approved Spanish catalogs under:
 
-    es-ES\
+    Translation\es-ES\
 
 Only rows explicitly marked with:
 
@@ -73,7 +73,7 @@ After extracting \`eng_patch.ifs\` once, build the current Spanish patch with:
 
 The builder:
 
-1. merges every translation CSV inside \`es-ES\`;
+1. merges every translation CSV inside \`Translation\\es-ES\`;
 2. rejects conflicting translations for the same source string;
 3. patches DAT cells only when the entire value matches an approved source;
 4. decrypts/re-encrypts encrypted DAT resources and verifies the AES round trip;

@@ -48,7 +48,8 @@ jobs:
           Copy-Item Tools/MHOTranslationKit/ExtractAndScan.ps1 artifacts/MHOTranslationKit/
           Copy-Item Tools/MHOTranslationKit/BuildSpanishPatch.ps1 artifacts/MHOTranslationKit/
           Copy-Item Tools/MHOTranslationKit/README.md artifacts/MHOTranslationKit/
-          Copy-Item Translation/es-ES artifacts/MHOTranslationKit/es-ES -Recurse
+          New-Item -ItemType Directory -Force artifacts/MHOTranslationKit/Translation | Out-Null
+          Copy-Item Translation/es-ES artifacts/MHOTranslationKit/Translation/es-ES -Recurse
           @"
           Monster Hunter Online Translation Kit
 
