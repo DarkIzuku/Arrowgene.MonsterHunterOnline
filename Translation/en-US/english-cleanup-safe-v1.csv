@@ -1,0 +1,216 @@
+source,translation,status,category,notes
+小时,Hours,translate,ui,Curated low-risk player-facing CJK cleanup
+分钟,Minutes,translate,ui,Curated low-risk player-facing CJK cleanup
+全部,All,translate,ui,Curated low-risk player-facing CJK cleanup
+小于,Less than,translate,ui,Curated low-risk player-facing CJK cleanup
+大于,Greater than,translate,ui,Curated low-risk player-facing CJK cleanup
+附近,Nearby,translate,ui,Curated low-risk player-facing CJK cleanup
+素材,Materials,translate,ui,Curated low-risk player-facing CJK cleanup
+系统,System,translate,ui,Curated low-risk player-facing CJK cleanup
+密语,Whisper,translate,ui,Curated low-risk player-facing CJK cleanup
+消耗品,Consumables,translate,ui,Curated low-risk player-facing CJK cleanup
+事件,Event,translate,ui,Curated low-risk player-facing CJK cleanup
+区域,Area,translate,ui,Curated low-risk player-facing CJK cleanup
+喇叭,Speaker,translate,ui,Curated low-risk player-facing CJK cleanup
+战斗,Battle,translate,ui,Curated low-risk player-facing CJK cleanup
+邮件,Mail,translate,social,Curated low-risk player-facing CJK cleanup
+重命名,Rename,translate,ui,Curated low-risk player-facing CJK cleanup
+技能珠,Skill Jewel,translate,ui,Curated low-risk player-facing CJK cleanup
+通常弹,Normal Ammo,translate,ui,Curated low-risk player-facing CJK cleanup
+队伍,Party,translate,ui,Curated low-risk player-facing CJK cleanup
+普通,Normal,translate,ui,Curated low-risk player-facing CJK cleanup
+加为猎友,Add Friend,translate,social,Curated low-risk player-facing CJK cleanup
+复制人名,Copy Name,translate,ui,Curated low-risk player-facing CJK cleanup
+复制名称,Copy Name,translate,ui,Curated low-risk player-facing CJK cleanup
+已经确认交易,Trade Confirmed,translate,social,Curated low-risk player-facing CJK cleanup
+未开始,Not Started,translate,ui,Curated low-risk player-facing CJK cleanup
+添加分组,Add Group,translate,social,Curated low-risk player-facing CJK cleanup
+删除分组,Delete Group,translate,social,Curated low-risk player-facing CJK cleanup
+更改分组,Change Group,translate,social,Curated low-risk player-facing CJK cleanup
+删除猎友,Remove Friend,translate,social,Curated low-risk player-facing CJK cleanup
+删除路人,Remove Stranger,translate,ui,Curated low-risk player-facing CJK cleanup
+申请组队,Request to Join Party,translate,social,Curated low-risk player-facing CJK cleanup
+踢除队友,Kick Party Member,translate,social,Curated low-risk player-facing CJK cleanup
+邀请组队,Invite to Party,translate,social,Curated low-risk player-facing CJK cleanup
+添加到黑名单,Add to Blacklist,translate,social,Curated low-risk player-facing CJK cleanup
+移除黑名单,Remove from Blacklist,translate,social,Curated low-risk player-facing CJK cleanup
+加入黑名单,Add to Blacklist,translate,social,Curated low-risk player-facing CJK cleanup
+屏蔽,Block,translate,ui,Curated low-risk player-facing CJK cleanup
+解除屏蔽,Unblock,translate,ui,Curated low-risk player-facing CJK cleanup
+陷阱,Trap,translate,ui,Curated low-risk player-facing CJK cleanup
+商城道具,Shop Item,translate,ui,Curated low-risk player-facing CJK cleanup
+交易,Trade,translate,social,Curated low-risk player-facing CJK cleanup
+仓库道具,Storage Item,translate,ui,Curated low-risk player-facing CJK cleanup
+任务道具,Quest Item,translate,quest,Curated low-risk player-facing CJK cleanup
+关卡道具,Stage Item,translate,ui,Curated low-risk player-facing CJK cleanup
+普通道具,Regular Item,translate,ui,Curated low-risk player-facing CJK cleanup
+素材仓库,Material Storage,translate,ui,Curated low-risk player-facing CJK cleanup
+货币,Currency,translate,ui,Curated low-risk player-facing CJK cleanup
+工具,Tools,translate,ui,Curated low-risk player-facing CJK cleanup
+其他,Other,translate,ui,Curated low-risk player-facing CJK cleanup
+中级,Intermediate,translate,ui,Curated low-risk player-facing CJK cleanup
+低级,Low,translate,ui,Curated low-risk player-facing CJK cleanup
+高级,High,translate,ui,Curated low-risk player-facing CJK cleanup
+较低,Lower,translate,ui,Curated low-risk player-facing CJK cleanup
+稀有,Rare,translate,ui,Curated low-risk player-facing CJK cleanup
+团员,Member,translate,social,Curated low-risk player-facing CJK cleanup
+团长,Leader,translate,social,Curated low-risk player-facing CJK cleanup
+队员,Member,translate,ui,Curated low-risk player-facing CJK cleanup
+队长,Leader,translate,social,Curated low-risk player-facing CJK cleanup
+好友,Friend,translate,social,Curated low-risk player-facing CJK cleanup
+我的猎友,My Friends,translate,social,Curated low-risk player-facing CJK cleanup
+战队,Clan,translate,social,Curated low-risk player-facing CJK cleanup
+战队邀请,Clan Invite,translate,social,Curated low-risk player-facing CJK cleanup
+猎团,Guild,translate,social,Curated low-risk player-facing CJK cleanup
+猎团邀请,Guild Invite,translate,social,Curated low-risk player-facing CJK cleanup
+编辑备注,Edit Note,translate,ui,Curated low-risk player-facing CJK cleanup
+转让队长,Transfer Leader,translate,social,Curated low-risk player-facing CJK cleanup
+私聊,Private Chat,translate,social,Curated low-risk player-facing CJK cleanup
+举报,Report,translate,social,Curated low-risk player-facing CJK cleanup
+查看猎人,View Hunter,translate,ui,Curated low-risk player-facing CJK cleanup
+麻痹陷阱,Shock Trap,translate,ui,Curated low-risk player-facing CJK cleanup
+榴弹,Crag Ammo,translate,ui,Curated low-risk player-facing CJK cleanup
+贯穿弹,Pierce Ammo,translate,ui,Curated low-risk player-facing CJK cleanup
+散弹,Pellet Ammo,translate,ui,Curated low-risk player-facing CJK cleanup
+火属性,Fire,translate,ui,Curated low-risk player-facing CJK cleanup
+水属性,Water,translate,ui,Curated low-risk player-facing CJK cleanup
+冰属性,Ice,translate,ui,Curated low-risk player-facing CJK cleanup
+雷属性,Thunder,translate,ui,Curated low-risk player-facing CJK cleanup
+龙属性,Dragon,translate,ui,Curated low-risk player-facing CJK cleanup
+未知属性,Unknown Element,translate,ui,Curated low-risk player-facing CJK cleanup
+世界,World,translate,ui,Curated low-risk player-facing CJK cleanup
+剧情,Story,translate,ui,Curated low-risk player-facing CJK cleanup
+综合,General,translate,ui,Curated low-risk player-facing CJK cleanup
+会员价,Member Price,translate,ui,Curated low-risk player-facing CJK cleanup
+尊享价,Exclusive Price,translate,ui,Curated low-risk player-facing CJK cleanup
+每天,Daily,translate,ui,Curated low-risk player-facing CJK cleanup
+每周,Weekly,translate,ui,Curated low-risk player-facing CJK cleanup
+每月,Monthly,translate,ui,Curated low-risk player-facing CJK cleanup
+场景,Scene,translate,ui,Curated low-risk player-facing CJK cleanup
+失败,Failed,translate,ui,Curated low-risk player-facing CJK cleanup
+按钮,Button,translate,ui,Curated low-risk player-facing CJK cleanup
+普通按钮,Button,translate,ui,Curated low-risk player-facing CJK cleanup
+类型,Type,translate,ui,Curated low-risk player-facing CJK cleanup
+挑战,Challenge,translate,ui,Curated low-risk player-facing CJK cleanup
+试练,Trial,translate,ui,Curated low-risk player-facing CJK cleanup
+无期限,No Time Limit,translate,ui,Curated low-risk player-facing CJK cleanup
+获得,Obtain,translate,ui,Curated low-risk player-facing CJK cleanup
+对话,Dialogue,translate,ui,Curated low-risk player-facing CJK cleanup
+完成,Complete,translate,ui,Curated low-risk player-facing CJK cleanup
+交谈,Talk,translate,ui,Curated low-risk player-facing CJK cleanup
+使用,Use,translate,ui,Curated low-risk player-facing CJK cleanup
+启动,Activate,translate,ui,Curated low-risk player-facing CJK cleanup
+寻找,Find,translate,ui,Curated low-risk player-facing CJK cleanup
+操纵,Operate,translate,ui,Curated low-risk player-facing CJK cleanup
+采集,Gather,translate,ui,Curated low-risk player-facing CJK cleanup
+讨伐,Slay,translate,ui,Curated low-risk player-facing CJK cleanup
+捕获,Capture,translate,ui,Curated low-risk player-facing CJK cleanup
+训练,Training,translate,ui,Curated low-risk player-facing CJK cleanup
+前往,Go to,translate,ui,Curated low-risk player-facing CJK cleanup
+去找,Find,translate,ui,Curated low-risk player-facing CJK cleanup
+委托板,Quest Board,translate,quest,Curated low-risk player-facing CJK cleanup
+狩猎场,Hunting Ground,translate,quest,Curated low-risk player-facing CJK cleanup
+狩猎准备,Hunt Preparation,translate,quest,Curated low-risk player-facing CJK cleanup
+完成狩猎,Complete Hunt,translate,quest,Curated low-risk player-facing CJK cleanup
+任务,Quest,translate,quest,Curated low-risk player-facing CJK cleanup
+任务失败,Quest Failed,translate,quest,Curated low-risk player-facing CJK cleanup
+任务完成,Quest Complete,translate,quest,Curated low-risk player-facing CJK cleanup
+任务进行,Quest in Progress,translate,quest,Curated low-risk player-facing CJK cleanup
+任务名称,Quest Name,translate,quest,Curated low-risk player-facing CJK cleanup
+完成任务,Complete Quest,translate,quest,Curated low-risk player-facing CJK cleanup
+任务时限,Time Limit,translate,quest,Curated low-risk player-facing CJK cleanup
+放弃任务,Abandon Quest,translate,quest,Curated low-risk player-facing CJK cleanup
+任务奖励,Quest Rewards,translate,quest,Curated low-risk player-facing CJK cleanup
+任务物品,Quest Item,translate,quest,Curated low-risk player-facing CJK cleanup
+任务目标,Quest Objective,translate,quest,Curated low-risk player-facing CJK cleanup
+接受任务,Accept Quest,translate,quest,Curated low-risk player-facing CJK cleanup
+任务列表,Quest List,translate,quest,Curated low-risk player-facing CJK cleanup
+任务类型,Quest Type,translate,quest,Curated low-risk player-facing CJK cleanup
+任务进度,Quest Progress,translate,quest,Curated low-risk player-facing CJK cleanup
+共享任务,Shared Quest,translate,quest,Curated low-risk player-facing CJK cleanup
+普通任务,Normal Quest,translate,quest,Curated low-risk player-facing CJK cleanup
+每日任务,Daily Quest,translate,quest,Curated low-risk player-facing CJK cleanup
+关卡目标描述,Stage Objective,translate,quest,Curated low-risk player-facing CJK cleanup
+出发,Depart,translate,quest,Curated low-risk player-facing CJK cleanup
+出发狩猎,Depart for Hunt,translate,quest,Curated low-risk player-facing CJK cleanup
+普通狩猎,Normal Hunt,translate,quest,Curated low-risk player-facing CJK cleanup
+狩猎,Hunting,translate,quest,Curated low-risk player-facing CJK cleanup
+狩猎关卡,Hunting Stage,translate,quest,Curated low-risk player-facing CJK cleanup
+取消,Cancel,translate,ui,Curated low-risk player-facing CJK cleanup
+取消排队,Cancel Queue,translate,ui,Curated low-risk player-facing CJK cleanup
+取消订单,Cancel Order,translate,ui,Curated low-risk player-facing CJK cleanup
+确认,Confirm,translate,ui,Curated low-risk player-facing CJK cleanup
+保存,Save,translate,ui,Curated low-risk player-facing CJK cleanup
+购买,Buy,translate,ui,Curated low-risk player-facing CJK cleanup
+匹配,Matchmaking,translate,ui,Curated low-risk player-facing CJK cleanup
+使用物品,Use Item,translate,ui,Curated low-risk player-facing CJK cleanup
+穿戴,Equip,translate,ui,Curated low-risk player-facing CJK cleanup
+放弃,Abandon,translate,ui,Curated low-risk player-facing CJK cleanup
+恢复默认,Restore Defaults,translate,controls,Curated low-risk player-facing CJK cleanup
+返回上一步,Back,translate,controls,Curated low-risk player-facing CJK cleanup
+今日不再显示,Don't Show Again Today,translate,controls,Curated low-risk player-facing CJK cleanup
+打开界面,Open Menu,translate,controls,Curated low-risk player-facing CJK cleanup
+显示全部线路,Show All Channels,translate,controls,Curated low-risk player-facing CJK cleanup
+关卡显示,Stage Display,translate,controls,Curated low-risk player-facing CJK cleanup
+模式显示,Display Mode,translate,controls,Curated low-risk player-facing CJK cleanup
+地貌类型显示,Terrain Display,translate,controls,Curated low-risk player-facing CJK cleanup
+按键,Button,translate,controls,Curated low-risk player-facing CJK cleanup
+鼠标右键,Right Mouse Button,translate,controls,Curated low-risk player-facing CJK cleanup
+鼠标左键,Left Mouse Button,translate,controls,Curated low-risk player-facing CJK cleanup
+关闭手柄,Disable Controller,translate,controls,Curated low-risk player-facing CJK cleanup
+开启手柄,Enable Controller,translate,controls,Curated low-risk player-facing CJK cleanup
+不支持多键位,Multiple bindings are not supported,translate,controls,Curated low-risk player-facing CJK cleanup
+非法键位,Invalid key binding,translate,controls,Curated low-risk player-facing CJK cleanup
+武器操作设置,Weapon Controls,translate,controls,Curated low-risk player-facing CJK cleanup
+瞄准方案设置,Aiming Settings,translate,controls,Curated low-risk player-facing CJK cleanup
+详细设置,Advanced Settings,translate,controls,Curated low-risk player-facing CJK cleanup
+视角回正,Reset Camera,translate,controls,Curated low-risk player-facing CJK cleanup
+视角切换,Switch Camera,translate,controls,Curated low-risk player-facing CJK cleanup
+右摇杆上,Right Stick Up,translate,controls,Curated low-risk player-facing CJK cleanup
+右摇杆下,Right Stick Down,translate,controls,Curated low-risk player-facing CJK cleanup
+右摇杆右,Right Stick Right,translate,controls,Curated low-risk player-facing CJK cleanup
+右摇杆左,Right Stick Left,translate,controls,Curated low-risk player-facing CJK cleanup
+左摇杆上,Left Stick Up,translate,controls,Curated low-risk player-facing CJK cleanup
+左摇杆下,Left Stick Down,translate,controls,Curated low-risk player-facing CJK cleanup
+左摇杆右,Left Stick Right,translate,controls,Curated low-risk player-facing CJK cleanup
+左摇杆左,Left Stick Left,translate,controls,Curated low-risk player-facing CJK cleanup
+左摇杆瞄准,Aim with Left Stick,translate,controls,Curated low-risk player-facing CJK cleanup
+瞄准,Aim,translate,controls,Curated low-risk player-facing CJK cleanup
+按住鼠标右键拖动可旋转观察,Hold the right mouse button and drag to rotate the view.,translate,controls,Curated low-risk player-facing CJK cleanup
+游戏设置中单独进行修改,Change this separately in Game Settings.,translate,controls,Curated low-risk player-facing CJK cleanup
+以上均可在设置,All of the above can be changed in Settings.,translate,controls,Curated low-risk player-facing CJK cleanup
+应用移动视点通过小桥吧,Move the camera and cross the bridge.,translate,controls,Curated low-risk player-facing CJK cleanup
+试试打开招式表界面学习更多的新招式吧,Open the Moves List to learn more moves.,translate,controls,Curated low-risk player-facing CJK cleanup
+靠近小地图中的狩猎场位置就能进行出发准备了，快试试看吧！,Go to the hunting area on the minimap to prepare for departure. Try it now!,translate,quest,Tutorial text from in-game screenshot; English shortened to fit DAT byte budget
+大剑,Great Sword,translate,equipment,Curated low-risk player-facing CJK cleanup
+太刀,Long Sword,translate,equipment,Curated low-risk player-facing CJK cleanup
+片手,Sword & Shield,translate,equipment,Curated low-risk player-facing CJK cleanup
+双刀,Dual Blades,translate,equipment,Curated low-risk player-facing CJK cleanup
+狩猎笛,Hunting Horn,translate,equipment,Curated low-risk player-facing CJK cleanup
+长枪,Lance,translate,equipment,Curated low-risk player-facing CJK cleanup
+铳枪,Gunlance,translate,equipment,Curated low-risk player-facing CJK cleanup
+大锤,Hammer,translate,equipment,Curated low-risk player-facing CJK cleanup
+弓,Bow,translate,equipment,Curated low-risk player-facing CJK cleanup
+斩斧,Switch Axe,translate,equipment,Curated low-risk player-facing CJK cleanup
+武器,Weapon,translate,equipment,Curated low-risk player-facing CJK cleanup
+装备,Equipment,translate,equipment,Curated low-risk player-facing CJK cleanup
+等级,Level,translate,ui,Curated low-risk player-facing CJK cleanup
+剩余时间,Time Remaining,translate,ui,Curated low-risk player-facing CJK cleanup
+持有量,Owned,translate,ui,Curated low-risk player-facing CJK cleanup
+基本信息,Basic Info,translate,ui,Curated low-risk player-facing CJK cleanup
+道具名称,Item Name,translate,ui,Curated low-risk player-facing CJK cleanup
+名字,Name,translate,ui,Curated low-risk player-facing CJK cleanup
+已领取,Claimed,translate,ui,Curated low-risk player-facing CJK cleanup
+积分,Points,translate,ui,Curated low-risk player-facing CJK cleanup
+今日剩余,Remaining Today,translate,ui,Curated low-risk player-facing CJK cleanup
+本周剩余,Remaining This Week,translate,ui,Curated low-risk player-facing CJK cleanup
+本月剩余,Remaining This Month,translate,ui,Curated low-risk player-facing CJK cleanup
+今日可胜利,Wins Available Today,translate,ui,Curated low-risk player-facing CJK cleanup
+本周可胜利,Wins Available This Week,translate,ui,Curated low-risk player-facing CJK cleanup
+本月可胜利,Wins Available This Month,translate,ui,Curated low-risk player-facing CJK cleanup
+每日完成任务,Complete Daily Quest,translate,quest,Curated low-risk player-facing CJK cleanup
+需求,Required,translate,ui,Curated low-risk player-facing CJK cleanup
+加成,Bonus,translate,ui,Curated low-risk player-facing CJK cleanup
+银币,Silver,translate,ui,Curated low-risk player-facing CJK cleanup
+领赏,Claim Reward,translate,ui,Curated low-risk player-facing CJK cleanup
+加速,Speed Up,translate,ui,Curated low-risk player-facing CJK cleanup

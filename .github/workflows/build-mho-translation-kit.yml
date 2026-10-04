@@ -1,0 +1,69 @@
+name: Build MHO Translation Kit
+
+on:
+  push:
+    branches:
+      - feature/mho-translation-tooling
+    paths:
+      - "Tools/MHOTranslator/**"
+      - "Tools/MHOIFSExtractor/**"
+      - "Tools/MHOTranslationKit/**"
+      - "Translation/es-ES/**"
+      - "Translation/en-US/**"
+      - ".github/workflows/build-mho-translation-kit.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "Tools/MHOTranslator/**"
+      - "Tools/MHOIFSExtractor/**"
+      - "Tools/MHOTranslationKit/**"
+      - "Translation/es-ES/**"
+      - "Translation/en-US/**"
+      - ".github/workflows/build-mho-translation-kit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-kit:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build MHOTranslator
+        run: dotnet publish Tools/MHOTranslator/MHOTranslator.csproj -c Release -r win-x64 --self-contained true -o artifacts/translator
+
+      - name: Assemble kit
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force artifacts/MHOTranslationKit | Out-Null
+          Copy-Item artifacts/translator/* artifacts/MHOTranslationKit/ -Recurse
+          Copy-Item Tools/MHOTranslationKit/ExtractAndScan.ps1 artifacts/MHOTranslationKit/
+          Copy-Item Tools/MHOTranslationKit/BuildSpanishPatch.ps1 artifacts/MHOTranslationKit/
+          Copy-Item Tools/MHOTranslationKit/BuildEnglishCleanup.ps1 artifacts/MHOTranslationKit/
+          Copy-Item Tools/MHOTranslationKit/README.md artifacts/MHOTranslationKit/
+          New-Item -ItemType Directory -Force artifacts/MHOTranslationKit/Translation | Out-Null
+          Copy-Item Translation/es-ES artifacts/MHOTranslationKit/Translation/es-ES -Recurse
+          Copy-Item Translation/en-US artifacts/MHOTranslationKit/Translation/en-US -Recurse
+          @"
+          Monster Hunter Online Translation Kit
+
+          This build uses Arrowgene's managed nIFS parser.
+          Tencent IFS2.dll is not required. Game assets are not included.
+          "@ | Set-Content artifacts/MHOTranslationKit/READ-ME-FIRST.txt
+
+      - name: Upload kit
+        uses: actions/upload-artifact@v4
+        with:
+          name: MHO-Translation-Kit-Windows
+          path: artifacts/MHOTranslationKit
+          if-no-files-found: error

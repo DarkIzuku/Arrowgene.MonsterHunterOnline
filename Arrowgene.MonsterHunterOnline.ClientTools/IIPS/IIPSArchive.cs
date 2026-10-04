@@ -323,6 +323,13 @@ public sealed class IIPSArchive : IDisposable
         Metadata.HeaderMd5 = metadata.HeaderMd5;
         Metadata.BetMd5 = metadata.BetMd5;
         Metadata.HetMd5 = metadata.HetMd5;
+        Metadata.Md5PieceSize = metadata.Md5PieceSize;
+        Metadata.RawChunkSize = metadata.RawChunkSize;
+        Metadata.Md5PatchBaseTag = (byte[])metadata.Md5PatchBaseTag.Clone();
+        Metadata.Md5PatchedTag = (byte[])metadata.Md5PatchedTag.Clone();
+        Metadata.OriginalHetSection = (byte[])metadata.OriginalHetSection.Clone();
+        Metadata.OriginalBetSection = (byte[])metadata.OriginalBetSection.Clone();
+        Metadata.OriginalBetHeader = (uint[])metadata.OriginalBetHeader.Clone();
 
         _records.Clear();
         _entries.Clear();

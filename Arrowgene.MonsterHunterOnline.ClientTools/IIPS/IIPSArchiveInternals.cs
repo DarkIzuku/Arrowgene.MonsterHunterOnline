@@ -75,9 +75,16 @@ internal static class IIPSArchiveFormat
     {
         using MemoryStream ms = new MemoryStream();
         ms.WriteByte(0x02);
-        using (DeflateStream deflate = new DeflateStream(ms, CompressionLevel.SmallestSize, leaveOpen: true))
+
+        // Tencent's IFS2.dll stores method 0x02 sectors as a complete zlib
+        // stream (e.g. 78 9C ...), not raw DEFLATE. DeflateStream produces
+        // raw DEFLATE, which our managed reader tolerated but the original
+        // client loader does not necessarily accept. CompressionLevel.Optimal
+        // maps to the same normal zlib profile used by the working English
+        // patch rather than the maximum-compression 78 DA profile.
+        using (ZLibStream zlib = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
         {
-            deflate.Write(input, 0, input.Length);
+            zlib.Write(input, 0, input.Length);
         }
 
         return ms.ToArray();
@@ -230,6 +237,8 @@ internal sealed class IIPSArchiveEntryRecord
     public ulong FileOffset { get; set; }
     public ulong FileSize { get; set; }
     public ulong CompressedSize { get; set; }
+    public ulong OriginalFileOffset { get; set; }
+    public ulong OriginalStoredLength { get; set; }
     public uint Flags { get; set; }
     public ulong NameHash { get; set; }
     public int HetIndex { get; set; } = -1;

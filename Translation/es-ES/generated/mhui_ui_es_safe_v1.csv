@@ -1,0 +1,468 @@
+source,translation,status,abc_tag,string_index,confidence,reason,notes
+Adventure,Aventura,translate,106,140,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Hell,Infernal,translate,106,153,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Master,Maestro,translate,106,160,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Medium,Medio,translate,106,161,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Monster Slay,Caza de monstruos,translate,106,162,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Today's situation,Situación de hoy,translate,106,167,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Dragon Element,Elemento dragón,translate,149,56,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Fire Element,Elemento fuego,translate,149,63,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Ice Element,Elemento hielo,translate,149,80,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Lightning Element,Elemento rayo,translate,149,85,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Unknown Element,Elemento desconocido,translate,149,91,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Water Element,Elemento agua,translate,149,92,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+[Leader],[Líder],translate,162,11,medium,punctuated_literal,english_patch_exact_slot;approved_safe_v1
+[Member],[Miembro],translate,162,12,medium,punctuated_literal,english_patch_exact_slot;approved_safe_v1
+Paralysis Trap,Trampa paralizante,translate,162,97,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Guild,Gremio,translate,163,6,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Party,Grupo,translate,163,8,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Sys,Sistema,translate,163,9,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+All,Todo,translate,163,13,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Speaker,Altavoz,translate,163,30,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+World,Mundo,translate,163,44,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Area,Área,translate,163,104,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Battle,Batalla,translate,163,106,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Friend,Amigo,translate,163,123,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Plot,Historia,translate,163,127,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+All,Todo,translate,901,18,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Consumables ,Consumibles ,translate,901,21,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Equip,Equipo,translate,901,22,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Jewels ,Joyas ,translate,901,24,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Materials ,Materiales ,translate,901,25,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Other,Otros,translate,901,26,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Tools,Herramientas,translate,901,29,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cash Item,Objeto premium,translate,901,147,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Currency,Moneda,translate,901,149,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Item Storage,Almacén de objetos,translate,901,165,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Level Item,Objeto de nivel,translate,901,175,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Material Storage,Almacén de materiales,translate,901,177,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Quest Item,Objeto de misión,translate,901,182,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Regular Item,Objeto normal,translate,901,184,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+High,Alto,translate,1832,55,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Low,Bajo,translate,1832,57,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Med,Medio,translate,1832,58,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Very Low,Muy bajo,translate,1832,63,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+8-24 Hours,8-24 horas,translate,1834,16,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Med,Medio,translate,1834,22,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+V. Long,Muy largo,translate,1834,32,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+2 Hours,2 horas,translate,1834,59,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+2-8 Hours,2-8 horas,translate,1834,60,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+24 Hours,24 horas,translate,1834,61,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+8 Hours,8 horas,translate,1834,110,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+All,Todo,translate,1834,124,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Average,Promedio,translate,1834,128,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+High Level,Nivel alto,translate,1834,138,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Intermediate,Intermedio,translate,1834,139,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Less than 30min,Menos de 30 min,translate,1834,140,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Long,Largo,translate,1834,141,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Low Level,Nivel bajo,translate,1834,142,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Rare,Raro,translate,1834,152,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Short,Corto,translate,1834,165,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Total Price,Precio total,translate,1834,167,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Unit Price,Precio unitario,translate,1834,168,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+All ,Todo ,translate,1837,52,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Consumables ,Consumibles ,translate,1837,54,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Equip,Equipo,translate,1837,55,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Jewels ,Joyas ,translate,1837,58,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Other,Otros,translate,1837,60,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+All,Todo,translate,1843,49,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Consumables ,Consumibles ,translate,1843,53,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Jewels ,Joyas ,translate,1843,61,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Materials ,Materiales ,translate,1843,62,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Other,Otros,translate,1843,65,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Friend,Amigo,translate,1853,36,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Copy Name,Copiar nombre,translate,1857,50,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Kick,Expulsar,translate,1857,61,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Add Friend,Añadir amigo,translate,1857,191,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Add to Blacklist,Añadir a la lista negra,translate,1857,192,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Block,Bloquear,translate,1857,194,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Change Group,Cambiar grupo,translate,1857,196,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Edit Note,Editar nota,translate,1857,199,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Guild Apply,Solicitar ingreso al gremio,translate,1857,202,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Guild Invite,Invitación de gremio,translate,1857,203,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Invite Clan,Invitar al clan,translate,1857,205,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Invite to Guild,Invitar al gremio,translate,1857,206,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Invite to Party,Invitar al grupo,translate,1857,207,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Join Party,Unirse al grupo,translate,1857,208,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Mail,Correo,translate,1857,209,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Private Chat,Chat privado,translate,1857,214,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Rename Group,Renombrar grupo,translate,1857,218,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Report,Reportar,translate,1857,219,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Team of 12,Equipo de 12,translate,1857,222,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Team of 16,Equipo de 16,translate,1857,223,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Team of 8,Equipo de 8,translate,1857,224,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Trade,Comerciar,translate,1857,225,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Transfer Leader,Transferir liderazgo,translate,1857,226,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Unblock,Desbloquear,translate,1857,227,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Exclusive Price：,Precio exclusivo:,translate,1890,71,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Member Price：,Precio de miembro:,translate,1890,89,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Combination,Combinación,translate,2329,50,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Food,Comida,translate,2329,53,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Jewelry,Joyería,translate,2329,59,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Monthly Complete,Completado mensual,translate,2340,82,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Monthly's stock,Existencias mensuales,translate,2340,83,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Today Complete,Completado hoy,translate,2340,87,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Today's stock,Existencias de hoy,translate,2340,88,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Weekly Complete,Completado semanal,translate,2340,91,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Weekly's stock,Existencias semanales,translate,2340,92,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+All,Todo,translate,2539,11,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Guild,Gremio,translate,2539,17,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Party,Grupo,translate,2539,24,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Sys,Sistema,translate,2539,26,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+World,Mundo,translate,2539,27,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+All,Todo,translate,2621,6,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Average,Promedio,translate,2621,85,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Challenge,Desafío,translate,2621,87,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Limit,Límite,translate,2621,90,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Trial,Prueba,translate,2621,95,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Fashion,Moda,translate,2732,6,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Unknown,Desconocido,translate,2732,7,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Accessory,Accesorio,translate,2732,9,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Armor,Armadura,translate,2732,10,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Chest,Pecho,translate,2732,11,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Face,Rostro,translate,2732,12,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Hair,Cabello,translate,2732,13,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Head,Cabeza,translate,2732,14,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Legs,Piernas,translate,2732,16,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Necklace,Collar,translate,2732,17,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Skill Point,Punto de habilidad,translate,2732,19,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Waist,Cintura,translate,2732,20,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Weapon,Arma,translate,2732,21,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Wrist,Muñeca,translate,2732,22,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Ammo,Munición,translate,2732,58,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Bangle,Brazalete,translate,2732,60,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Book,Libro,translate,2732,61,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Bow,Arco,translate,2732,62,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Bowgun,Ballesta,translate,2732,63,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Consumables,Consumibles,translate,2732,64,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Costume,Traje,translate,2732,65,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Currency,Moneda,translate,2732,66,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Dualswords,Espadas dobles,translate,2732,68,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Epic,Épico,translate,2732,69,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Excellent,Excelente,translate,2732,70,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Farm,Granja,translate,2732,71,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Gem,Gema,translate,2732,72,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Good,Bueno,translate,2732,74,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Greatsword,Gran espada,translate,2732,75,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Gunlance,Lanza pistola,translate,2732,76,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Hammer,Martillo,translate,2732,77,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Hunting Horn,Cornamusa,translate,2732,78,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Jewelry,Joyería,translate,2732,145,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Lance,Lanza,translate,2732,146,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Longsword,Espada larga,translate,2732,147,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Low,Bajo,translate,2732,148,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Materials,Materiales,translate,2732,149,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Melee,Cuerpo a cuerpo,translate,2732,150,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+NPC Gift,Regalo de PNJ,translate,2732,151,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Quest Items,Objetos de misión,translate,2732,154,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Range,A distancia,translate,2732,155,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Respawn Coin,Moneda de reaparición,translate,2732,156,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Ring,Anillo,translate,2732,157,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Skin,Apariencia,translate,2732,158,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Star Stone,Piedra estelar,translate,2732,159,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Switch Axe,Hacha espada,translate,2732,161,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Sword and Shield,Espada y escudo,translate,2732,162,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Talisman,Talismán,translate,2732,163,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Tattoo,Tatuaje,translate,2732,164,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Tools,Herramientas,translate,2732,166,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Weapon Skin,Apariencia de arma,translate,2732,167,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Carted,Desmayos,translate,2735,5,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Damage Dealt,Daño infligido,translate,2735,8,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Time,Tiempo,translate,2735,9,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Damage Taken,Daño recibido,translate,2735,10,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Hit Rate,Tasa de aciertos,translate,2735,11,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Auxiliary,Apoyo,translate,2735,56,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Broken Parts,Partes rotas,translate,2735,59,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Detection Success,Detecciones exitosas,translate,2735,68,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Element Damage,Daño elemental,translate,2735,69,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Flash Bombs,Bombas de luz,translate,2735,73,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+HH songs played,Melodías de cornamusa,translate,2735,83,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Highest Growth,Mayor crecimiento,translate,2735,84,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Hit,Golpes,translate,2735,85,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Hits Taken,Golpes recibidos,translate,2735,86,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Item Used,Objetos usados,translate,2735,98,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Item used,Objetos usados,translate,2735,99,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Kill Rate,Tasa de bajas,translate,2735,100,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Knockdown,Derribos,translate,2735,101,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Max Damage,Daño máximo,translate,2735,105,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Mobs Killed,Enemigos eliminados,translate,2735,106,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Monster Paralysis,Parálisis de monstruos,translate,2735,107,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+No injury score,Puntuación sin heridas,translate,2735,108,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Number of Injuries,Número de heridas,translate,2735,109,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Number of Paralysis,Número de parálisis,translate,2735,110,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Number of Sleep,Número de sueños,translate,2735,111,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Number of Stun,Número de aturdimientos,translate,2735,112,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Paralyzed,Paralizado,translate,2735,114,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Physical Damage,Daño físico,translate,2735,115,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Poisoned,Envenenado,translate,2735,116,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Potions Used,Pociones usadas,translate,2735,117,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Score,Puntuación,translate,2735,121,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Slay Monster,Abatir monstruo,translate,2735,122,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Song Increase,Mejora de melodía,translate,2735,123,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Status Effects,Estados alterados,translate,2735,124,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Traps Used,Trampas usadas,translate,2735,128,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Weapon Hits,Golpes con arma,translate,2735,130,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+ time(s), vez/veces,translate,2756,11,medium,punctuated_literal,english_patch_exact_slot;approved_safe_v1
+ Hunting quest and, Misión de caza y,translate,2756,13,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Collect ,Recolecta ,translate,2756,17,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+ finish the hunt, termina la cacería,translate,2756,27,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+& up,o más,translate,2756,28,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Find ,Encuentra ,translate,2756,93,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Go to ,Ve a ,translate,2756,100,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Talk to ,Habla con ,translate,2756,152,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Training,Entrenamiento,translate,2756,153,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+8-24 Hours,8-24 horas,translate,2764,8,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Med,Medio,translate,2764,13,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+V. Long,Muy largo,translate,2764,18,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+2-8 Hours,2-8 horas,translate,2764,43,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Less than 30min,Menos de 30 min,translate,2764,96,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Long,Largo,translate,2764,97,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Short,Corto,translate,2764,116,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Lv：,Nv.:,translate,2818,24,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Can decompose,Se puede descomponer,translate,2818,101,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Cost：,Coste:,translate,2818,109,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Guild Lvl：,Nv. de gremio:,translate,2818,131,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Palico Lvl：,Nv. de Palico:,translate,2818,163,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Sell：,Venta:,translate,2818,168,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Time Left：,Tiempo restante:,translate,2818,177,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Unavailable,No disponible,translate,2818,181,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Usage count：,Usos:,translate,2818,182,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Skill Type:,Tipo de habilidad:,translate,2819,6,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Reward,Recompensa,translate,2819,13,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+ Dragon , Dragón ,translate,2819,28,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+ Fire , Fuego ,translate,2819,29,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+ Ice , Hielo ,translate,2819,30,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+ Thunder , Trueno ,translate,2819,31,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+ Water , Agua ,translate,2819,32,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Active,Activa,translate,2819,53,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Available Skills：,Habilidades disponibles:,translate,2819,64,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Can carry：,Se puede llevar:,translate,2819,66,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Character Bound,Ligado al personaje,translate,2819,69,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Character Equipment,Equipo de personaje,translate,2819,70,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Durability：,Durabilidad:,translate,2819,81,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Female,Femenino,translate,2819,90,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Gender：,Género:,translate,2819,92,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Intimacy：,Afinidad:,translate,2819,104,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Item Type：,Tipo de objeto:,translate,2819,107,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Male,Masculino,translate,2819,130,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Palico Equipment,Equipo de Palico,translate,2819,137,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Passive,Pasiva,translate,2819,138,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Posession：,Posesión:,translate,2819,145,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Quality：,Calidad:,translate,2819,147,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Rare ,Raro ,translate,2819,148,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Single item,Objeto único,translate,2819,155,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Support,Apoyo,translate,2819,161,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Unique Item,Objeto exclusivo,translate,2819,164,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Active,Activa,translate,2820,47,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Passive,Pasiva,translate,2820,65,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Skill Type:,Tipo de habilidad:,translate,2820,75,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Support,Apoyo,translate,2820,78,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Offline,Desconectado,translate,2825,51,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Online,Conectado,translate,2825,52,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Attack Type：,Tipo de ataque:,translate,2828,26,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Attack：,Ataque:,translate,2828,27,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Character：,Carácter:,translate,2828,29,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Color：,Color:,translate,2828,30,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Crit Dmg：,Daño crítico:,translate,2828,31,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Defense：,Defensa:,translate,2828,32,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Experience：,Experiencia:,translate,2828,36,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Health：,Salud:,translate,2828,39,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Intimacy：,Afinidad:,translate,2828,42,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Kind：,Tipo:,translate,2828,43,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Max Level：,Nivel máximo:,translate,2828,45,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Morale：,Moral:,translate,2828,46,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Qualification：,Aptitud:,translate,2828,62,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Target：,Objetivo:,translate,2828,64,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Available,Disponible,translate,2830,21,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Closed,Cerrado,translate,2830,23,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Offline,Desconectado,translate,2831,35,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Online,Conectado,translate,2831,36,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+ Farm, Granja,translate,2832,11,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Activates [,Activa [,translate,2836,27,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Med,Medio,translate,2836,28,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Dragon,Dragón,translate,2836,43,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Dragon Res,Res. dragón,translate,2836,44,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Fire Res,Res. fuego,translate,2836,46,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Ice Res,Res. hielo,translate,2836,47,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Skill Points,Puntos de habilidad,translate,2836,54,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Sleep,Sueño,translate,2836,55,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Slow,Lento,translate,2836,56,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Thunder Res,Res. trueno,translate,2836,59,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Water Res,Res. agua,translate,2836,61,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+   Can cast,   Se puede lanzar,translate,2836,96,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+   Can decompose,   Se puede descomponer,translate,2836,97,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+   Can dye,   Se puede teñir,translate,2836,98,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+   Can forge,   Se puede forjar,translate,2836,99,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+   Can refine,   Se puede refinar,translate,2836,100,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+   Can upgrade,   Se puede mejorar,translate,2836,101,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+ Skill Set, Conjunto de habilidades,translate,2836,103,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+ time(s), vez/veces,translate,2836,105,medium,punctuated_literal,english_patch_exact_slot;approved_safe_v1
+Attack,Ataque,translate,2836,203,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Attack +,Ataque +,translate,2836,204,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Blast,Explosión,translate,2836,209,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Chance on cast,Probabilidad al lanzar,translate,2836,215,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Character Bound,Ligado al personaje,translate,2836,216,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Defense,Defensa,translate,2836,239,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Dragon +,Dragón +,translate,2836,242,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Element,Elemento,translate,2836,267,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Fast,Rápido,translate,2836,283,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Female,Femenino,translate,2836,285,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Fire,Fuego,translate,2836,286,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Fire +,Fuego +,translate,2836,287,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Gender：,Género:,translate,2836,290,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Ice,Hielo,translate,2836,299,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Ice +,Hielo +,translate,2836,300,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Long ,Largo ,translate,2836,330,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Male,Masculino,translate,2836,337,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Paralysis,Parálisis,translate,2836,350,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Paralyze,Paralizar,translate,2836,351,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Paralyze +,Parálisis +,translate,2836,352,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Poison +,Veneno +,translate,2836,358,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Power,Potencia,translate,2836,359,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Quick,Rápido,translate,2836,361,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Rare ,Raro ,translate,2836,365,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Sharpness,Afilado,translate,2836,371,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Shelling  ,Disparo  ,translate,2836,372,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Single item,Objeto único,translate,2836,374,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Sleep +,Sueño +,translate,2836,376,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Spread ,Dispersión ,translate,2836,379,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Thunder,Trueno,translate,2836,391,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Thunder +,Trueno +,translate,2836,392,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Unique Item,Objeto exclusivo,translate,2836,399,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Unlock Mode,Modo de desbloqueo,translate,2836,400,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Water,Agua,translate,2836,404,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Water +,Agua +,translate,2836,405,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Attack：,Ataque:,translate,2838,35,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Blast：,Explosión:,translate,2838,38,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Defense：,Defensa:,translate,2838,40,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Dragon Res：,Res. dragón:,translate,2838,43,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Dragon：,Dragón:,translate,2838,44,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Fire Res：,Res. fuego:,translate,2838,48,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Fire：,Fuego:,translate,2838,49,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Ice Res：,Res. hielo:,translate,2838,53,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Ice：,Hielo:,translate,2838,54,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Luck：,Suerte:,translate,2838,59,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Paralyze：,Parálisis:,translate,2838,64,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Poison：,Veneno:,translate,2838,66,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Sleep：,Sueño:,translate,2838,68,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Thunder Res：,Res. trueno:,translate,2838,73,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Thunder：,Trueno:,translate,2838,74,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Water Res：,Res. agua:,translate,2838,79,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Water：,Agua:,translate,2838,80,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Closed,Cerrado,translate,2839,5,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Available,Disponible,translate,2839,27,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Idle,Inactivo,translate,2839,38,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Attack Type：,Tipo de ataque:,translate,2840,23,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Attack：,Ataque:,translate,2840,24,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Character：,Carácter:,translate,2840,26,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Color：,Color:,translate,2840,27,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Crit Dmg：,Daño crítico:,translate,2840,28,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Defense：,Defensa:,translate,2840,29,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Health：,Salud:,translate,2840,35,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Intimacy：,Afinidad:,translate,2840,38,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Kind：,Tipo:,translate,2840,39,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Max Level：,Nivel máximo:,translate,2840,41,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Quality：,Calidad:,translate,2840,57,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Target：,Objetivo:,translate,2840,59,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Closed,Cerrado,translate,2841,26,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Idle,Inactivo,translate,2841,33,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cancel,Cancelar,translate,2891,14,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cancel,Cancelar,translate,2905,14,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Confirm,Confirmar,translate,2905,15,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cancel,Cancelar,translate,2908,15,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Confirm,Confirmar,translate,2908,16,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cancel,Cancelar,translate,2909,19,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Confirm,Confirmar,translate,2909,21,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cancel,Cancelar,translate,2912,15,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Confirm,Confirmar,translate,2912,16,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cancel,Cancelar,translate,2916,20,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Confirm,Confirmar,translate,2916,21,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cancel,Cancelar,translate,2917,15,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Confirm,Confirmar,translate,2917,16,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cancel,Cancelar,translate,2920,15,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Confirm,Confirmar,translate,2920,16,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cancel,Cancelar,translate,2923,16,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Confirm,Confirmar,translate,2923,17,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+TGP Bonus,Bonificación TGP,translate,2954,6,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Cart Fees,Coste por desmayo,translate,2954,15,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+VIP Bonus,Bonificación VIP,translate,2954,61,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Go to ,Ve a ,translate,2964,20,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Affection,Afecto,translate,2964,202,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Cat Food,Comida del Palico,translate,2964,203,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Collect ,Recolecta ,translate,2964,204,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Gold,Oro,translate,2964,226,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Med,Medio,translate,2964,229,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Meditation,Meditación,translate,2964,230,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Running,Carrera,translate,2964,237,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Sandbag,Saco de entrenamiento,translate,2964,238,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Silver,Plata,translate,2964,239,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Weights,Pesas,translate,2964,241,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Brave,Valiente,translate,2997,7,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Clever,Astuto,translate,2997,8,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Collect ,Recolecta ,translate,2997,9,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Dark Gold,Oro oscuro,translate,2997,10,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Loyal,Leal,translate,2997,11,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Pink,Rosa,translate,2997,55,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Accompanied,Acompañado,translate,2997,154,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Adventurer,Aventurero,translate,2997,155,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Balance,Equilibrado,translate,2997,156,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Blue,Azul,translate,2997,157,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Bombs & Boomerangs,Bombas y bumeranes,translate,2997,158,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Bombs Only,Solo bombas,translate,2997,159,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Boomerangs Only,Solo bumeranes,translate,2997,160,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Can't Attack,No puede atacar,translate,2997,161,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Diligent,Aplicado,translate,2997,163,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Gold,Oro,translate,2997,164,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Green,Verde,translate,2997,165,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Idle,Inactivo,translate,2997,166,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Lrg Monsters Only,Solo monstruos grandes,translate,2997,167,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Melee,Cuerpo a cuerpo,translate,2997,168,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Melee & Bombs,Cuerpo a cuerpo y bombas,translate,2997,169,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Melee & Boomerangs,Cuerpo a cuerpo y bumeranes,translate,2997,170,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Naughty,Travieso,translate,2997,171,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Pacifism,Pacifista,translate,2997,173,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Prefer Lrg Monsters,Prefiere monstruos grandes,translate,2997,187,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Prefer Sml Monsters,Prefiere monstruos pequeños,translate,2997,188,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Purple,Morado,translate,2997,189,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Quiet,Tranquilo,translate,2997,190,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Sml Monsters Only,Solo monstruos pequeños,translate,2997,191,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Tenacious,Tenaz,translate,2997,192,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Tough,Fuerte,translate,2997,193,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Training,Entrenamiento,translate,2997,194,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+White,Blanco,translate,2997,195,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+None,Ninguno,translate,3038,20,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Charge Level,Nivel de carga,translate,3038,70,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Shot Types,Tipos de disparo,translate,3038,91,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+[Arrow],[Flecha],translate,3038,96,medium,punctuated_literal,english_patch_exact_slot;approved_safe_v1
+Med,Medio,translate,3046,9,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Crag S,Munición pegajosa,translate,3046,18,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Pellet S,Munición perdigón,translate,3046,24,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Ammo,Munición,translate,3046,75,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Ammunition,Munición,translate,3046,76,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Dragon S,Munición dragón,translate,3046,86,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Fast,Rápido,translate,3046,88,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Flaming S,Munición fuego,translate,3046,89,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Freeze S,Munición hielo,translate,3046,91,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+NormalS,Munición normal,translate,3046,102,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Para S,Munición paralizante,translate,3046,104,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Pierce S,Munición perforante,translate,3046,105,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Poison S,Munición venenosa,translate,3046,106,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Rapid,Ráfaga,translate,3046,107,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Recoil,Retroceso,translate,3046,109,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Sleep S,Munición somnífera,translate,3046,110,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Slow,Lento,translate,3046,111,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Speed,Velocidad,translate,3046,113,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Thunder S,Munición trueno,translate,3046,117,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Water S,Munición agua,translate,3046,118,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+ time(s), vez/veces,translate,3055,11,medium,punctuated_literal,english_patch_exact_slot;approved_safe_v1
+ Hunting quest and, Misión de caza y,translate,3055,13,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Collect ,Recolecta ,translate,3055,19,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+ finish the hunt, termina la cacería,translate,3055,30,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+& up,o más,translate,3055,31,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Find ,Encuentra ,translate,3055,100,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Go to ,Ve a ,translate,3055,107,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Talk to ,Habla con ,translate,3055,166,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Training,Entrenamiento,translate,3055,167,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+day(s),día(s),translate,3056,6,medium,punctuated_literal,english_patch_exact_slot;approved_safe_v1
+hr(s),h,translate,3056,13,medium,punctuated_literal,english_patch_exact_slot;approved_safe_v1
+Empty,Vacío,translate,3217,10,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
