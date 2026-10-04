@@ -861,7 +861,8 @@ internal static class TranslationPatch
     {
         if (args.Length < 2)
         {
-            Console.Error.WriteLine("build-ifs requires <base.ifs> <patched-dir> [--out <output.ifs>].");
+            Console.Error.WriteLine(
+                "build-ifs requires <base.ifs> <patched-dir> [--out <output.ifs>] [--skip-oversize].");
             return 2;
         }
 
@@ -872,6 +873,8 @@ internal static class TranslationPatch
             Path.Combine(
                 Path.GetDirectoryName(baseIfs)!,
                 Path.GetFileNameWithoutExtension(baseIfs) + "_es.ifs"));
+        bool skipOversize = args.Any(
+            x => x.Equals("--skip-oversize", StringComparison.OrdinalIgnoreCase));
 
         if (!File.Exists(baseIfs))
         {
@@ -906,54 +909,96 @@ internal static class TranslationPatch
         Console.WriteLine($"Base IFS:      {baseIfs}");
         Console.WriteLine($"Patched files: {changes.Count}");
         Console.WriteLine($"Output IFS:    {outputIfs}");
+        if (skipOversize)
+            Console.WriteLine("Fit policy:    skip modified resources that cannot fit original layout");
+
+        List<(string Path, byte[] Data)> activeChanges = new(changes);
+        List<string> skippedOversize = [];
+        int finalMissing = 0;
+        int finalReplaced = 0;
 
         try
         {
-            using (IIPSArchive archive = IIPSArchive.Open(
-                       baseIfs,
-                       new IIPSArchiveOpenOptions
-                       {
-                           VerifyChecksums = true,
-                           LoadListFile = true,
-                           FileShare = FileShare.ReadWrite | FileShare.Delete,
-                       }))
+            while (true)
             {
-                int replaced = 0;
-                int missing = 0;
-
-                foreach ((string archivePath, byte[] data) in changes)
+                try
                 {
-                    if (!archive.TryGetEntry(archivePath, out IIPSArchiveEntry? entry) || entry == null)
+                    using IIPSArchive archive = IIPSArchive.Open(
+                        baseIfs,
+                        new IIPSArchiveOpenOptions
+                        {
+                            VerifyChecksums = true,
+                            LoadListFile = true,
+                            FileShare = FileShare.ReadWrite | FileShare.Delete,
+                        });
+
+                    int replaced = 0;
+                    int missing = 0;
+
+                    foreach ((string archivePath, byte[] data) in activeChanges)
                     {
-                        Console.Error.WriteLine($"[MISS] {archivePath}");
-                        missing++;
-                        continue;
+                        if (!archive.TryGetEntry(archivePath, out IIPSArchiveEntry? entry) || entry == null)
+                        {
+                            Console.Error.WriteLine($"[MISS] {archivePath}");
+                            missing++;
+                            continue;
+                        }
+
+                        archive.Replace(entry, data);
+                        replaced++;
                     }
 
-                    archive.Replace(entry, data);
-                    replaced++;
-                }
-
-                if (replaced == 0)
-                {
-                    Console.Error.WriteLine("None of the patched files exist in the base archive.");
-                    return 5;
-                }
-
-                archive.Save(
-                    outputIfs,
-                    new IIPSArchiveSaveOptions
+                    if (replaced == 0)
                     {
-                        IncludeListFile = false,
-                        PreserveUnchangedEntries = true,
-                        PreserveOriginalLayout = true,
-                    });
+                        Console.Error.WriteLine("None of the patched files exist in the base archive.");
+                        return 5;
+                    }
 
-                Console.WriteLine($"Replaced:      {replaced}");
-                Console.WriteLine($"Missing:       {missing}");
+                    archive.Save(
+                        outputIfs,
+                        new IIPSArchiveSaveOptions
+                        {
+                            IncludeListFile = false,
+                            PreserveUnchangedEntries = true,
+                            PreserveOriginalLayout = true,
+                        });
+
+                    finalMissing = missing;
+                    finalReplaced = replaced;
+                    break;
+                }
+                catch (InvalidDataException ex) when (skipOversize)
+                {
+                    string? oversizePath = TryParseOversizeArchivePath(ex.Message);
+                    if (string.IsNullOrWhiteSpace(oversizePath))
+                        throw;
+
+                    int index = activeChanges.FindIndex(
+                        x => x.Path.Equals(oversizePath, StringComparison.OrdinalIgnoreCase));
+                    if (index < 0)
+                        throw;
+
+                    string skippedPath = activeChanges[index].Path;
+                    activeChanges.RemoveAt(index);
+                    skippedOversize.Add(skippedPath);
+
+                    Console.WriteLine($"[SKIP-OVERSIZE] {skippedPath}");
+
+                    if (activeChanges.Count == 0)
+                    {
+                        Console.Error.WriteLine(
+                            "All modified resources were too large for the original nIFS layout.");
+                        return 8;
+                    }
+                }
             }
 
-            // Reopen and verify every modified entry byte-for-byte.
+            Console.WriteLine($"Replaced:      {finalReplaced}");
+            Console.WriteLine($"Missing:       {finalMissing}");
+            if (skipOversize)
+                Console.WriteLine($"Skipped fit:   {skippedOversize.Count}");
+
+            // Reopen and verify every resource that was actually included.
             using (IIPSArchive verify = IIPSArchive.Open(
                        outputIfs,
                        new IIPSArchiveOpenOptions
@@ -964,7 +1009,7 @@ internal static class TranslationPatch
                        }))
             {
                 int verified = 0;
-                foreach ((string archivePath, byte[] expected) in changes)
+                foreach ((string archivePath, byte[] expected) in activeChanges)
                 {
                     if (!verify.TryGetEntry(archivePath, out IIPSArchiveEntry? entry) || entry == null)
                     {
@@ -974,10 +1019,13 @@ internal static class TranslationPatch
                     byte[] actual = entry.ReadAllBytes();
                     if (!actual.AsSpan().SequenceEqual(expected))
                     {
-                        throw new InvalidDataException($"Verification mismatch after rebuild: {archivePath}");
+                        throw new InvalidDataException(
+                            $"Verification mismatch after rebuild: {archivePath}");
                     }
 
-                    string expectedMd5 = Convert.ToHexString(System.Security.Cryptography.MD5.HashData(expected)).ToLowerInvariant();
+                    string expectedMd5 = Convert.ToHexString(
+                        System.Security.Cryptography.MD5.HashData(expected))
+                        .ToLowerInvariant();
                     if (!string.Equals(entry.Md5, expectedMd5, StringComparison.OrdinalIgnoreCase))
                     {
                         throw new InvalidDataException(
@@ -991,6 +1039,13 @@ internal static class TranslationPatch
                 Console.WriteLine($"Verified:      {verified}");
             }
 
+            if (skippedOversize.Count > 0)
+            {
+                string skippedManifest = outputIfs + ".skipped-oversize.txt";
+                File.WriteAllLines(skippedManifest, skippedOversize, Utf8NoBom);
+                Console.WriteLine($"Skipped list:  {skippedManifest}");
+            }
+
             Console.WriteLine($"Built:         {outputIfs}");
             return 0;
         }
@@ -1001,6 +1056,24 @@ internal static class TranslationPatch
         }
     }
 
+    private static string? TryParseOversizeArchivePath(string message)
+    {
+        const string marker = "Modified record ";
+        int markerIndex = message.IndexOf(marker, StringComparison.Ordinal);
+        if (markerIndex < 0)
+            return null;
+
+        int openParen = message.IndexOf('(', markerIndex + marker.Length);
+        if (openParen < 0)
+            return null;
+
+        int closeParen = message.IndexOf(") needs ", openParen, StringComparison.Ordinal);
+        if (closeParen < 0)
+            return null;
+
+        string path = message.Substring(openParen + 1, closeParen - openParen - 1).Trim();
+        return path.Length == 0 ? null : path;
+    }
 
     public static int DeriveSafeCatalogCommand(string[] args)
     {

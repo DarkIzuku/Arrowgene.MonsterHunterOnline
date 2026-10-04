@@ -47,7 +47,7 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host ""
 Write-Host "[2/2] Rebuilding and verifying nIFS archive..."
-& $translator build-ifs $BaseIfs $patchedDir --out $OutputIfs
+& $translator build-ifs $BaseIfs $patchedDir --out $OutputIfs --skip-oversize
 if ($LASTEXITCODE -ne 0) {
     throw "IFS rebuild failed with exit code $LASTEXITCODE."
 }

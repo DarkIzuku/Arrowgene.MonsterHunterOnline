@@ -60,9 +60,11 @@ Commands:
       to likely player-facing fields and are padded so the encrypted DAT payload
       keeps exactly the same UTF-8 length.
 
-  build-ifs <base.ifs> <patched-dir> [--out <output.ifs>]
+  build-ifs <base.ifs> <patched-dir> [--out <output.ifs>] [--skip-oversize]
       Replaces translated resources in a copy of the base nIFS archive,
       saves it, reopens it and verifies modified entries byte-for-byte.
+      --skip-oversize keeps every change that fits the original physical layout
+      and automatically excludes modified resources that cannot fit safely.
 
   clone-ifs <base.ifs> [--out <output.ifs>]
       Rebuilds the archive without modifying any entry, then verifies all
