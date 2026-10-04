@@ -29,10 +29,6 @@ public class EnterLevelNtfHandler : CsProtoStructureHandler<EnterLevelNtf>
     {
         // _characterManager.SyncAllAttr(client);
 
-        //TODO: packet is a list so the game should handle a list of spawns, but it appears that it doesnt want ?
-        //      maybe because there is other entities ?
-        //CsCsProtoStructurePacket<MonsterAppearNtfList> monsterAppearNtfList = CsProtoResponse.MonsterAppearNtfList;
-
         string staticFolder = Path.Combine(Util.ExecutingDirectory(), "Files/Static");
         string npcFilePath = Path.Combine(staticFolder, "LevelDataNPCs.csv");
         using (TextFieldParser parser = new TextFieldParser(npcFilePath))
@@ -45,18 +41,23 @@ public class EnterLevelNtfHandler : CsProtoStructureHandler<EnterLevelNtf>
             while (!parser.EndOfData)
             {
                 string[] fields = parser.ReadFields();
-                string levelId = fields[0];
-                // Remove the ";" character
+                if (fields == null || fields.Length < 10)
+                    continue;
+
+                string rawLevelIds = fields[0];
+                string levelId = rawLevelIds;
+
+                // Preserve the original town/hub matching behavior.
                 if (levelId.Length > 0)
                     levelId = levelId.Remove(levelId.Length - 1);
 
                 // 150 hubs, 160 farm, 180 city
-                bool isMatch = (client.State.levelId.ToString() == levelId)
-                               && (levelId.StartsWith("150") || levelId.StartsWith("160") || levelId.StartsWith("180"))
-                               && levelId.EndsWith("01");
-                if (isMatch)
+                bool isTownMatch = (client.State.levelId.ToString() == levelId)
+                                   && (levelId.StartsWith("150") || levelId.StartsWith("160") || levelId.StartsWith("180"))
+                                   && levelId.EndsWith("01");
+                if (isTownMatch)
                 {
-                    //TODO: HACK because it doesnt seems to work with a full list of the zone
+                    // TODO: HACK because it doesnt seems to work with a full list of the zone.
                     CsCsProtoStructurePacket<MonsterAppearNtfList> monsterAppearNtfList =
                         CsProtoResponse.MonsterAppearNtfList;
 
@@ -69,7 +70,7 @@ public class EnterLevelNtfHandler : CsProtoStructureHandler<EnterLevelNtf>
                     float posY = float.Parse(posValues[1], CultureInfo.InvariantCulture);
                     float posZ = float.Parse(posValues[2], CultureInfo.InvariantCulture);
 
-                    //tricky thing, W is first here, not the same as ChangeTown.csv
+                    // Tricky thing, W is first here, not the same as ChangeTown.csv.
                     float rotateW = float.Parse(rotValues[0], CultureInfo.InvariantCulture);
                     float rotateX = float.Parse(rotValues[1], CultureInfo.InvariantCulture);
                     float rotateY = float.Parse(rotValues[2], CultureInfo.InvariantCulture);
@@ -86,13 +87,63 @@ public class EnterLevelNtfHandler : CsProtoStructureHandler<EnterLevelNtf>
                         Pose = new CSQuatT(npcPosVec, npcRotQuat),
                     });
 
-                    //TODO: HACK because it doesnt seems to take a full list of the zone
                     client.SendCsProtoStructurePacket(monsterAppearNtfList);
                     Thread.Sleep(25);
+                    continue;
                 }
+
+                // First vertical-slice hunt probe:
+                // Level 100292 is the Bulldrome hunt in Hermit Forest.
+                // Client data contains one unique "Guide_SP" row for this level with
+                // FixedMonsterID 60032, the quest-specific Bulldrome variant.
+                //
+                // Rathalos RE established that hunt monsters must use:
+                //   SpawnType = 1  -> resolve the render template by MonsterInfoId
+                //   NetId = 0      -> let the client allocate the local render puppet
+                //
+                // Keep this deliberately narrow until the visual spawn is validated.
+                bool isBulldromeProbe =
+                    client.State.levelId == 100292
+                    && rawLevelIds == "100292;"
+                    && fields[3] == "Guide_SP"
+                    && fields[9] == "60032";
+
+                if (!isBulldromeProbe)
+                    continue;
+
+                string[] huntPosValues = fields[4].Split(",");
+                string[] huntRotValues = fields[5].Split(",");
+
+                float huntPosX = float.Parse(huntPosValues[0], CultureInfo.InvariantCulture);
+                float huntPosY = float.Parse(huntPosValues[1], CultureInfo.InvariantCulture);
+                float huntPosZ = float.Parse(huntPosValues[2], CultureInfo.InvariantCulture);
+
+                float huntRotateW = float.Parse(huntRotValues[0], CultureInfo.InvariantCulture);
+                float huntRotateX = float.Parse(huntRotValues[1], CultureInfo.InvariantCulture);
+                float huntRotateY = float.Parse(huntRotValues[2], CultureInfo.InvariantCulture);
+                float huntRotateZ = float.Parse(huntRotValues[3], CultureInfo.InvariantCulture);
+
+                CSVec3 huntPosVec = new CSVec3(huntPosX, huntPosY, huntPosZ);
+                CSQuat huntRotQuat = new CSQuat(huntRotateW, huntRotateX, huntRotateY, huntRotateZ);
+
+                CsCsProtoStructurePacket<MonsterAppearNtfList> huntMonsterAppearNtfList =
+                    CsProtoResponse.MonsterAppearNtfList;
+
+                huntMonsterAppearNtfList.Structure.Appear.Add(new MonsterAppearNtf()
+                {
+                    NetId = 0,
+                    SpawnType = 1,
+                    MonsterInfoId = 60032,
+                    Pose = new CSQuatT(huntPosVec, huntRotQuat),
+                });
+
+                Logger.Info(client,
+                    $"Hunt monster appear probe: LevelId={client.State.levelId}, MonsterInfoId=60032, " +
+                    $"Spawn=Guide_SP, Position=({huntPosX},{huntPosY},{huntPosZ})");
+
+                client.SendCsProtoStructurePacket(huntMonsterAppearNtfList);
+                return;
             }
-            //TODO: should work like a full list
-            //client.SendCsProtoStructurePacket(monsterAppearNtfList);
         }
     }
 }
