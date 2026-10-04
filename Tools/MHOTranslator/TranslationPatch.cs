@@ -10,6 +10,13 @@ internal static class TranslationPatch
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly UTF8Encoding Utf8NoBom = new(false);
 
+    private sealed record SwfSlotTranslation(
+        int AbcTag,
+        int StringIndex,
+        string Source,
+        string Translation,
+        string ChineseSource);
+
     public static int ApplyCommand(string[] args)
     {
         if (args.Length < 2)
@@ -28,6 +35,7 @@ internal static class TranslationPatch
         string? onlySource = GetOption(args, "--only-source");
         string? overrideTranslation = GetOption(args, "--override-translation");
         bool swfInPlaceEqual = args.Any(x => x.Equals("--swf-inplace-equal", StringComparison.OrdinalIgnoreCase));
+        bool slotAware = args.Any(x => x.Equals("--slot-aware", StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(onlyPath))
         {
             onlyPath = onlyPath.Replace('\\', '/').TrimStart('/');
@@ -45,22 +53,41 @@ internal static class TranslationPatch
             return 2;
         }
 
-        Dictionary<string, string> translations;
+        Dictionary<string, string> translations = new(StringComparer.Ordinal);
+        List<SwfSlotTranslation> slotTranslations = [];
         try
         {
-            translations = LoadTranslations(catalogPath);
-            if (!string.IsNullOrWhiteSpace(onlySource))
+            if (slotAware)
             {
-                if (!translations.TryGetValue(onlySource, out string? selectedTranslation))
+                if (!string.IsNullOrWhiteSpace(onlySource) || swfInPlaceEqual)
                 {
-                    Console.Error.WriteLine($"Requested --only-source string is not present as status=translate: {onlySource}");
+                    Console.Error.WriteLine("--slot-aware cannot be combined with --only-source or --swf-inplace-equal.");
                     return 3;
                 }
 
-                translations = new Dictionary<string, string>(StringComparer.Ordinal)
+                slotTranslations = LoadSlotTranslations(catalogPath);
+                if (slotTranslations.Count == 0)
                 {
-                    [onlySource] = string.IsNullOrEmpty(overrideTranslation) ? selectedTranslation : overrideTranslation,
-                };
+                    Console.Error.WriteLine("Slot-aware catalog contains no status=translate rows with abc_tag + string_index.");
+                    return 3;
+                }
+            }
+            else
+            {
+                translations = LoadTranslations(catalogPath);
+                if (!string.IsNullOrWhiteSpace(onlySource))
+                {
+                    if (!translations.TryGetValue(onlySource, out string? selectedTranslation))
+                    {
+                        Console.Error.WriteLine($"Requested --only-source string is not present as status=translate: {onlySource}");
+                        return 3;
+                    }
+
+                    translations = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        [onlySource] = string.IsNullOrEmpty(overrideTranslation) ? selectedTranslation : overrideTranslation,
+                    };
+                }
             }
         }
         catch (Exception ex)
@@ -71,7 +98,7 @@ internal static class TranslationPatch
 
         Console.WriteLine($"Input:        {inputRoot}");
         Console.WriteLine($"Catalog:      {catalogPath}");
-        Console.WriteLine($"Translations: {translations.Count}");
+        Console.WriteLine($"Translations: {(slotAware ? slotTranslations.Count : translations.Count)}");
         Console.WriteLine($"Output:       {outputRoot}");
         Console.WriteLine($"Mode:         {(onlySwf ? "SWF/UI only" : "all supported resources")}");
         if (!string.IsNullOrWhiteSpace(onlyPath))
@@ -89,6 +116,10 @@ internal static class TranslationPatch
         if (swfInPlaceEqual)
         {
             Console.WriteLine("SWF mode:     equal-length in-place ABC patch");
+        }
+        if (slotAware)
+        {
+            Console.WriteLine("SWF mode:     exact DoABC slot-aware patch");
         }
 
         Directory.CreateDirectory(outputRoot);
@@ -132,9 +163,11 @@ internal static class TranslationPatch
                 }
                 else if (extension == ".swf" && SwfFile.IsSwf(file))
                 {
-                    patched = swfInPlaceEqual
-                        ? PatchSwfInPlaceEqualLength(original, relative, translations, out fileReplacements)
-                        : PatchSwf(original, relative, translations, out fileReplacements);
+                    patched = slotAware
+                        ? PatchSwfSlots(original, relative, slotTranslations, out fileReplacements)
+                        : swfInPlaceEqual
+                            ? PatchSwfInPlaceEqualLength(original, relative, translations, out fileReplacements)
+                            : PatchSwf(original, relative, translations, out fileReplacements);
                     swfFiles++;
                 }
                 else if (IsTextExtension(extension))
@@ -170,7 +203,7 @@ internal static class TranslationPatch
         File.WriteAllText(
             manifest,
             $"catalog={catalogPath}{Environment.NewLine}" +
-            $"translations={translations.Count}{Environment.NewLine}" +
+            $"translations={(slotAware ? slotTranslations.Count : translations.Count)}{Environment.NewLine}" +
             $"examined={examined}{Environment.NewLine}" +
             $"modified_files={modifiedFiles}{Environment.NewLine}" +
             $"replacements={replacements}{Environment.NewLine}" +
@@ -671,7 +704,7 @@ internal static class TranslationPatch
         string spanishCatalogPath = Path.GetFullPath(args[1]);
         string outputPath = Path.GetFullPath(
             GetOption(args, "--out") ??
-            Path.Combine(Environment.CurrentDirectory, "safe-english-to-spanish.csv"));
+            Path.Combine(Environment.CurrentDirectory, "safe-english-to-spanish-slots.csv"));
 
         if (!File.Exists(diffPath))
         {
@@ -690,34 +723,35 @@ internal static class TranslationPatch
             Dictionary<string, string> zhToEs = LoadTranslations(spanishCatalogPath);
             List<string[]> rows = ParseCsv(File.ReadAllText(diffPath));
             if (rows.Count == 0)
-            {
                 throw new InvalidDataException("SWF diff CSV is empty.");
-            }
 
             string[] header = rows[0];
             int tagCol = FindColumn(header, "abc_tag");
             int indexCol = FindColumn(header, "string_index");
             int beforeCol = FindColumn(header, "before");
             int afterCol = FindColumn(header, "after");
+            int beforeStructuralCol = FindColumn(header, "before_structural");
+            int afterStructuralCol = FindColumn(header, "after_structural");
             int statusCol = FindColumn(header, "status");
             int notesCol = FindColumn(header, "notes");
 
-            if (beforeCol < 0 || afterCol < 0)
+            if (tagCol < 0 || indexCol < 0 || beforeCol < 0 || afterCol < 0 ||
+                beforeStructuralCol < 0 || afterStructuralCol < 0)
             {
-                throw new InvalidDataException("SWF diff CSV must contain before and after columns.");
+                throw new InvalidDataException(
+                    "SWF diff is from an older tool. Regenerate it so abc_tag, string_index, " +
+                    "before_structural and after_structural are present.");
             }
 
-            Dictionary<string, (string Spanish, string Chinese, string Tag, string Index)> safe =
-                new(StringComparer.Ordinal);
-            HashSet<string> conflicts = new(StringComparer.Ordinal);
+            Dictionary<(int Tag, int Index), SwfSlotTranslation> safe = new();
 
             int examined = 0;
-            int samePoolCandidates = 0;
+            int stableSlots = 0;
+            int literalSlots = 0;
             int matchedSpanish = 0;
             int skippedStructural = 0;
             int skippedNoSpanish = 0;
             int skippedEmpty = 0;
-            int duplicateSame = 0;
 
             for (int i = 1; i < rows.Count; i++)
             {
@@ -736,7 +770,17 @@ internal static class TranslationPatch
                     continue;
                 }
 
-                samePoolCandidates++;
+                stableSlots++;
+
+                bool beforeStructural = bool.TryParse(row[beforeStructuralCol], out bool bs) && bs;
+                bool afterStructural = bool.TryParse(row[afterStructuralCol], out bool az) && az;
+                if (beforeStructural || afterStructural)
+                {
+                    skippedStructural++;
+                    continue;
+                }
+
+                literalSlots++;
 
                 if (string.IsNullOrEmpty(before) || string.IsNullOrEmpty(after) || before == after)
                 {
@@ -752,66 +796,52 @@ internal static class TranslationPatch
 
                 matchedSpanish++;
 
-                string tag = tagCol >= 0 && tagCol < row.Length ? row[tagCol] : string.Empty;
-                string index = indexCol >= 0 && indexCol < row.Length ? row[indexCol] : string.Empty;
-
-                if (conflicts.Contains(after))
+                if (!int.TryParse(row[tagCol], out int tag) || !int.TryParse(row[indexCol], out int index) ||
+                    tag < 0 || index <= 0)
                 {
+                    throw new InvalidDataException($"Invalid abc_tag/string_index on CSV row {i + 1}.");
+                }
+
+                var key = (tag, index);
+                SwfSlotTranslation mapping = new(tag, index, after, spanish, before);
+                if (safe.TryGetValue(key, out SwfSlotTranslation? existing))
+                {
+                    if (existing.Source != mapping.Source || existing.Translation != mapping.Translation)
+                    {
+                        throw new InvalidDataException(
+                            $"Conflicting slot mapping for DoABC {tag}, string {index}.");
+                    }
                     continue;
                 }
 
-                if (safe.TryGetValue(after, out var existing))
-                {
-                    if (!string.Equals(existing.Spanish, spanish, StringComparison.Ordinal))
-                    {
-                        conflicts.Add(after);
-                        safe.Remove(after);
-                    }
-                    else
-                    {
-                        duplicateSame++;
-                    }
-
-                    continue;
-                }
-
-                safe[after] = (spanish, before, tag, index);
+                safe[key] = mapping;
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
             using StreamWriter writer = new(outputPath, false, Utf8NoBom);
             writer.WriteLine("source,translation,status,zh_source,abc_tag,string_index,notes");
 
-            foreach ((string english, var value) in safe.OrderBy(x => x.Key, StringComparer.Ordinal))
+            foreach (SwfSlotTranslation value in safe.Values
+                         .OrderBy(x => x.AbcTag)
+                         .ThenBy(x => x.StringIndex))
             {
                 writer.WriteLine(
-                    $"{CsvEscape(english)},{CsvEscape(value.Spanish)},translate," +
-                    $"{CsvEscape(value.Chinese)},{CsvEscape(value.Tag)},{CsvEscape(value.Index)}," +
-                    $"english_patch_safe_slot");
+                    $"{CsvEscape(value.Source)},{CsvEscape(value.Translation)},translate," +
+                    $"{CsvEscape(value.ChineseSource)},{value.AbcTag},{value.StringIndex}," +
+                    $"english_patch_literal_slot");
             }
 
-            Console.WriteLine($"Diff:                  {diffPath}");
-            Console.WriteLine($"Spanish catalog:       {spanishCatalogPath}");
-            Console.WriteLine($"Diff rows examined:    {examined}");
-            Console.WriteLine($"Safe-slot candidates:  {samePoolCandidates}");
-            Console.WriteLine($"Matched Spanish rows:  {matchedSpanish}");
-            Console.WriteLine($"Safe unique mappings:  {safe.Count}");
-            Console.WriteLine($"Duplicate same mapping:{duplicateSame}");
-            Console.WriteLine($"Conflicting mappings:  {conflicts.Count}");
-            Console.WriteLine($"Skipped structural:    {skippedStructural}");
-            Console.WriteLine($"Skipped no Spanish:    {skippedNoSpanish}");
-            Console.WriteLine($"Skipped empty:         {skippedEmpty}");
-            Console.WriteLine($"Output:                {outputPath}");
-
-            if (conflicts.Count > 0)
-            {
-                Console.WriteLine();
-                Console.WriteLine("Excluded ambiguous English sources:");
-                foreach (string conflict in conflicts.OrderBy(x => x, StringComparer.Ordinal).Take(50))
-                {
-                    Console.WriteLine($"  {EscapeForLog(conflict)}");
-                }
-            }
+            Console.WriteLine($"Diff:                    {diffPath}");
+            Console.WriteLine($"Spanish catalog:         {spanishCatalogPath}");
+            Console.WriteLine($"Diff rows examined:      {examined}");
+            Console.WriteLine($"Stable-index slots:      {stableSlots}");
+            Console.WriteLine($"Non-structural slots:    {literalSlots}");
+            Console.WriteLine($"Matched Spanish slots:   {matchedSpanish}");
+            Console.WriteLine($"Safe exact slot mappings:{safe.Count}");
+            Console.WriteLine($"Skipped structural:      {skippedStructural}");
+            Console.WriteLine($"Skipped no Spanish:      {skippedNoSpanish}");
+            Console.WriteLine($"Skipped empty:           {skippedEmpty}");
+            Console.WriteLine($"Output:                  {outputPath}");
 
             return safe.Count > 0 ? 0 : 4;
         }
@@ -830,6 +860,73 @@ internal static class TranslationPatch
         }
 
         return value;
+    }
+
+    private static List<SwfSlotTranslation> LoadSlotTranslations(string path)
+    {
+        List<string> catalogs = File.Exists(path)
+            ? [path]
+            : Directory.EnumerateFiles(path, "*.csv", SearchOption.AllDirectories)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+        Dictionary<(int Tag, int Index), SwfSlotTranslation> result = new();
+
+        foreach (string catalog in catalogs)
+        {
+            List<string[]> rows = ParseCsv(File.ReadAllText(catalog));
+            if (rows.Count == 0)
+                continue;
+
+            string[] header = rows[0];
+            int sourceCol = FindColumn(header, "source");
+            int translationCol = FindColumn(header, "translation");
+            int statusCol = FindColumn(header, "status");
+            int chineseCol = FindColumn(header, "zh_source");
+            int tagCol = FindColumn(header, "abc_tag");
+            int indexCol = FindColumn(header, "string_index");
+
+            if (sourceCol < 0 || translationCol < 0 || tagCol < 0 || indexCol < 0)
+                continue;
+
+            for (int i = 1; i < rows.Count; i++)
+            {
+                string[] row = rows[i];
+                if (sourceCol >= row.Length || translationCol >= row.Length ||
+                    tagCol >= row.Length || indexCol >= row.Length)
+                    continue;
+
+                string status = statusCol >= 0 && statusCol < row.Length ? row[statusCol] : "translate";
+                if (!status.Equals("translate", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                string source = row[sourceCol];
+                string translation = row[translationCol];
+                string chinese = chineseCol >= 0 && chineseCol < row.Length ? row[chineseCol] : string.Empty;
+                if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(translation) || source == translation)
+                    continue;
+
+                if (!int.TryParse(row[tagCol], out int tag) || !int.TryParse(row[indexCol], out int index) ||
+                    tag < 0 || index <= 0)
+                {
+                    throw new InvalidDataException(
+                        $"Invalid abc_tag/string_index in {catalog} row {i + 1}.");
+                }
+
+                var key = (tag, index);
+                SwfSlotTranslation mapping = new(tag, index, source, translation, chinese);
+                if (result.TryGetValue(key, out SwfSlotTranslation? existing) &&
+                    (existing.Source != source || existing.Translation != translation))
+                {
+                    throw new InvalidDataException(
+                        $"Conflicting slot translation for DoABC {tag}, string {index}.");
+                }
+
+                result[key] = mapping;
+            }
+        }
+
+        return result.Values.OrderBy(x => x.AbcTag).ThenBy(x => x.StringIndex).ToList();
     }
 
     private static Dictionary<string, string> LoadTranslations(string path)
@@ -1008,6 +1105,184 @@ internal static class TranslationPatch
         }
 
         return result;
+    }
+
+    private static byte[]? PatchSwfSlots(
+        byte[] original,
+        string name,
+        IReadOnlyList<SwfSlotTranslation> slots,
+        out int replacements)
+    {
+        replacements = 0;
+        SwfFile swf = SwfFile.Open(original, name);
+        byte[] uncompressed = swf.GetUncompressedBytes();
+        if (swf.Tags.Count == 0)
+            return null;
+
+        Dictionary<int, List<SwfSlotTranslation>> byTag = slots
+            .GroupBy(x => x.AbcTag)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StringIndex).ToList());
+
+        int firstTagOffset = swf.Tags[0].Offset;
+        using MemoryStream rebuilt = new();
+        rebuilt.Write(uncompressed, 0, firstTagOffset);
+
+        int lastOriginalEnd = firstTagOffset;
+        int doAbcOrdinal = 0;
+        foreach (SwfTag tag in swf.Tags)
+        {
+            if (tag.Offset > lastOriginalEnd)
+                rebuilt.Write(uncompressed, lastOriginalEnd, tag.Offset - lastOriginalEnd);
+
+            int originalTagLength = tag.HeaderLength + checked((int)tag.Length);
+            if (tag.Code != 82 || !byTag.TryGetValue(doAbcOrdinal, out List<SwfSlotTranslation>? tagSlots))
+            {
+                rebuilt.Write(uncompressed, tag.Offset, originalTagLength);
+            }
+            else
+            {
+                byte[] patchedData = PatchDoAbcSlots(tag.Data.ToArray(), doAbcOrdinal, tagSlots, out int tagReplacements);
+                replacements += tagReplacements;
+                WriteSwfTag(rebuilt, tag.Code, patchedData);
+            }
+
+            if (tag.Code == 82)
+                doAbcOrdinal++;
+
+            lastOriginalEnd = tag.Offset + originalTagLength;
+        }
+
+        if (lastOriginalEnd < uncompressed.Length)
+            rebuilt.Write(uncompressed, lastOriginalEnd, uncompressed.Length - lastOriginalEnd);
+
+        if (replacements != slots.Count)
+        {
+            throw new InvalidDataException(
+                $"Slot-aware SWF patch applied {replacements}/{slots.Count} requested exact slots.");
+        }
+
+        byte[] rebuiltFws = rebuilt.ToArray();
+        rebuiltFws[0] = (byte)'F';
+        rebuiltFws[1] = (byte)'W';
+        rebuiltFws[2] = (byte)'S';
+        BinaryPrimitives.WriteUInt32LittleEndian(rebuiltFws.AsSpan(4, 4), (uint)rebuiltFws.Length);
+
+        if (swf.Compression == SwfCompression.Uncompressed)
+        {
+            _ = SwfFile.Open(rebuiltFws, name + ":verify-slots");
+            return rebuiltFws;
+        }
+
+        if (swf.Compression != SwfCompression.Zlib)
+            throw new NotSupportedException($"Cannot rebuild {swf.Compression} SWF: {name}");
+
+        using MemoryStream compressed = new();
+        compressed.WriteByte((byte)'C');
+        compressed.WriteByte((byte)'W');
+        compressed.WriteByte((byte)'S');
+        compressed.WriteByte(rebuiltFws[3]);
+        compressed.Write(rebuiltFws, 4, 4);
+        using (ZLibStream zlib = new(compressed, CompressionLevel.SmallestSize, leaveOpen: true))
+            zlib.Write(rebuiltFws, 8, rebuiltFws.Length - 8);
+
+        byte[] result = compressed.ToArray();
+        _ = SwfFile.Open(result, name + ":verify-slots");
+        return result;
+    }
+
+    private static byte[] PatchDoAbcSlots(
+        byte[] tagData,
+        int doAbcOrdinal,
+        IReadOnlyList<SwfSlotTranslation> slots,
+        out int replacements)
+    {
+        replacements = 0;
+        if (tagData.Length < 5)
+            throw new InvalidDataException($"DoABC {doAbcOrdinal} is too short.");
+
+        int offset = 4;
+        while (offset < tagData.Length && tagData[offset] != 0)
+            offset++;
+        if (offset >= tagData.Length)
+            throw new InvalidDataException($"DoABC {doAbcOrdinal} has no ABC name terminator.");
+
+        offset++;
+        int abcOffset = offset;
+        ReadOnlySpan<byte> abc = tagData.AsSpan(abcOffset);
+        int p = 4;
+
+        uint intCount = ReadU30(abc, ref p);
+        for (uint i = 1; i < intCount; i++) SkipU32(abc, ref p);
+
+        uint uintCount = ReadU30(abc, ref p);
+        for (uint i = 1; i < uintCount; i++) SkipU32(abc, ref p);
+
+        uint doubleCount = ReadU30(abc, ref p);
+        if (doubleCount > 0)
+        {
+            int doubleBytes = checked((int)((doubleCount - 1) * 8));
+            if (doubleBytes > abc.Length - p)
+                throw new InvalidDataException("ABC double pool exceeds tag.");
+            p += doubleBytes;
+        }
+
+        uint stringCount = ReadU30(abc, ref p);
+        int stringsStart = p;
+        Dictionary<int, SwfSlotTranslation> byIndex = slots.ToDictionary(x => x.StringIndex);
+
+        List<byte[]> strings = new(checked((int)Math.Max(0, stringCount - 1)));
+        for (int i = 1; i < stringCount; i++)
+        {
+            uint length = ReadU30(abc, ref p);
+            int len = checked((int)length);
+            if (len > abc.Length - p)
+                throw new InvalidDataException("ABC string exceeds tag.");
+
+            byte[] raw = abc.Slice(p, len).ToArray();
+            p += len;
+            byte[] output = raw;
+
+            if (byIndex.TryGetValue(i, out SwfSlotTranslation? mapping))
+            {
+                string actual = StrictUtf8.GetString(raw);
+                if (!string.Equals(actual, mapping.Source, StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        $"DoABC {doAbcOrdinal} string {i} source mismatch: " +
+                        $"expected={EscapeForLog(mapping.Source)}, actual={EscapeForLog(actual)}.");
+                }
+
+                output = Utf8NoBom.GetBytes(mapping.Translation);
+                replacements++;
+                Console.WriteLine(
+                    $"[SWF-SLOT] abc={doAbcOrdinal} index={i} " +
+                    $"source={EscapeForLog(mapping.Source)} -> {EscapeForLog(mapping.Translation)}");
+            }
+
+            strings.Add(output);
+        }
+
+        if (replacements != slots.Count)
+        {
+            throw new InvalidDataException(
+                $"DoABC {doAbcOrdinal} patched {replacements}/{slots.Count} requested slots.");
+        }
+
+        int stringsEnd = p;
+        using MemoryStream abcOut = new();
+        abcOut.Write(abc.Slice(0, stringsStart));
+        foreach (byte[] str in strings)
+        {
+            WriteU30(abcOut, (uint)str.Length);
+            abcOut.Write(str);
+        }
+        abcOut.Write(abc.Slice(stringsEnd));
+
+        using MemoryStream tagOut = new();
+        tagOut.Write(tagData, 0, abcOffset);
+        abcOut.Position = 0;
+        abcOut.CopyTo(tagOut);
+        return tagOut.ToArray();
     }
 
     private static byte[]? PatchSwfInPlaceEqualLength(
