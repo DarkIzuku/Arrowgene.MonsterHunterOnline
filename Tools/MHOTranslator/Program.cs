@@ -12,6 +12,7 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "extract-ifs" => ExtractIfsCommand(args.Skip(1).ToArray()),
     "scan" => ScanCommand(args.Skip(1).ToArray()),
     "apply" => TranslationPatch.ApplyCommand(args.Skip(1).ToArray()),
+    "apply-dat-slots" => TranslationPatch.ApplyDatSlotsCommand(args.Skip(1).ToArray()),
     "build-ifs" => TranslationPatch.BuildIfsCommand(args.Skip(1).ToArray()),
     "clone-ifs" => TranslationPatch.CloneIfsCommand(args.Skip(1).ToArray()),
     "inspect-ifs" => TranslationPatch.InspectIfsCommand(args.Skip(1).ToArray()),
@@ -46,6 +47,11 @@ Commands:
       Applies only catalog rows marked status=translate. DAT files are
       decrypted/re-encrypted with verification; supported SWF strings are
       rebuilt structurally instead of binary-patched.
+
+  apply-dat-slots <input-dir> <catalog.csv> [--out <patched-dir>]
+      Applies exact DAT TSV cells using path + sheet + row + col coordinates.
+      The current source value must match before replacement, and the encrypted
+      DAT payload is round-trip verified before writing.
 
   build-ifs <base.ifs> <patched-dir> [--out <output.ifs>]
       Replaces translated resources in a copy of the base nIFS archive,

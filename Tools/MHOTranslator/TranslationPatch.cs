@@ -17,6 +17,145 @@ internal static class TranslationPatch
         string Translation,
         string ChineseSource);
 
+    private sealed record DatSlotTranslation(
+        string Path,
+        string Sheet,
+        int Row,
+        int Col,
+        string Source,
+        string Translation,
+        string Header);
+
+
+    public static int ApplyDatSlotsCommand(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("apply-dat-slots requires <input-dir> <catalog.csv> [--out <patched-dir>].");
+            return 2;
+        }
+
+        string inputRoot = Path.GetFullPath(args[0]);
+        string catalogPath = Path.GetFullPath(args[1]);
+        string outputRoot = Path.GetFullPath(
+            GetOption(args, "--out") ??
+            Path.Combine(Environment.CurrentDirectory, "mho-es-dat-slots"));
+
+        if (!Directory.Exists(inputRoot))
+        {
+            Console.Error.WriteLine($"Input directory does not exist: {inputRoot}");
+            return 2;
+        }
+
+        if (!File.Exists(catalogPath))
+        {
+            Console.Error.WriteLine($"Catalog file does not exist: {catalogPath}");
+            return 2;
+        }
+
+        List<DatSlotTranslation> slots;
+        try
+        {
+            slots = LoadDatSlotTranslations(catalogPath);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to load DAT slot catalog: {ex.Message}");
+            return 3;
+        }
+
+        if (slots.Count == 0)
+        {
+            Console.Error.WriteLine("DAT slot catalog contains no status=translate rows.");
+            return 3;
+        }
+
+        Console.WriteLine($"Input:        {inputRoot}");
+        Console.WriteLine($"Catalog:      {catalogPath}");
+        Console.WriteLine($"Translations: {slots.Count}");
+        Console.WriteLine($"Output:       {outputRoot}");
+        Console.WriteLine("Mode:         exact DAT TSV cells");
+
+        Directory.CreateDirectory(outputRoot);
+
+        int modifiedFiles = 0;
+        int replacements = 0;
+        int failures = 0;
+
+        foreach (IGrouping<string, DatSlotTranslation> group in slots
+                     .GroupBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+                     .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            string relative = group.Key.Replace('\\', '/').TrimStart('/');
+            string sourcePath = Path.Combine(
+                inputRoot,
+                relative.Replace('/', Path.DirectorySeparatorChar));
+
+            if (!File.Exists(sourcePath))
+            {
+                failures++;
+                Console.Error.WriteLine($"[FAIL] missing DAT: {relative}");
+                continue;
+            }
+
+            try
+            {
+                byte[] original = File.ReadAllBytes(sourcePath);
+                List<DatSlotTranslation> fileSlots = group
+                    .OrderBy(x => x.Sheet, StringComparer.Ordinal)
+                    .ThenBy(x => x.Row)
+                    .ThenBy(x => x.Col)
+                    .ToList();
+
+                byte[] patched = PatchDatSlots(
+                    original,
+                    relative,
+                    fileSlots,
+                    out int fileReplacements);
+
+                if (fileReplacements != fileSlots.Count)
+                {
+                    throw new InvalidDataException(
+                        $"Exact DAT patch applied {fileReplacements}/{fileSlots.Count} requested cells.");
+                }
+
+                string target = Path.Combine(
+                    outputRoot,
+                    relative.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.WriteAllBytes(target, patched);
+
+                modifiedFiles++;
+                replacements += fileReplacements;
+                Console.WriteLine($"[PATCH] {relative} ({fileReplacements} exact cells)");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.Error.WriteLine($"[FAIL] {relative}: {ex.Message}");
+            }
+        }
+
+        string manifest = Path.Combine(outputRoot, "_translation-manifest.txt");
+        File.WriteAllText(
+            manifest,
+            $"catalog={catalogPath}{Environment.NewLine}" +
+            $"mode=dat-slots{Environment.NewLine}" +
+            $"translations={slots.Count}{Environment.NewLine}" +
+            $"modified_files={modifiedFiles}{Environment.NewLine}" +
+            $"replacements={replacements}{Environment.NewLine}" +
+            $"failures={failures}{Environment.NewLine}",
+            Utf8NoBom);
+
+        Console.WriteLine();
+        Console.WriteLine($"Modified files: {modifiedFiles}");
+        Console.WriteLine($"Replacements:   {replacements}");
+        Console.WriteLine($"Failures:       {failures}");
+        Console.WriteLine($"Manifest:       {manifest}");
+
+        return failures == 0 && replacements == slots.Count ? 0 : 10;
+    }
+
     public static int ApplyCommand(string[] args)
     {
         if (args.Length < 2)
@@ -998,6 +1137,278 @@ internal static class TranslationPatch
 
                 result[source] = translation;
             }
+        }
+
+        return result;
+    }
+
+
+    private static List<DatSlotTranslation> LoadDatSlotTranslations(string catalogPath)
+    {
+        List<string[]> rows = ParseCsv(File.ReadAllText(catalogPath));
+        if (rows.Count == 0)
+            return [];
+
+        string[] header = rows[0];
+        int pathCol = FindColumn(header, "path");
+        int sheetCol = FindColumn(header, "sheet");
+        int rowCol = FindColumn(header, "row");
+        int colCol = FindColumn(header, "col");
+        int sourceCol = FindColumn(header, "source");
+        int translationCol = FindColumn(header, "translation");
+        int statusCol = FindColumn(header, "status");
+        int headerCol = FindColumn(header, "header");
+
+        if (pathCol < 0 || sheetCol < 0 || rowCol < 0 || colCol < 0 ||
+            sourceCol < 0 || translationCol < 0)
+        {
+            throw new InvalidDataException(
+                "DAT slot catalog must contain path,sheet,row,col,source,translation columns.");
+        }
+
+        Dictionary<(string Path, string Sheet, int Row, int Col), DatSlotTranslation> result =
+            new();
+
+        for (int i = 1; i < rows.Count; i++)
+        {
+            string[] row = rows[i];
+            if (row.Length != header.Length)
+            {
+                throw new InvalidDataException(
+                    $"Malformed DAT slot CSV row {i + 1}: expected {header.Length} columns, got {row.Length}.");
+            }
+
+            string status = statusCol >= 0 ? row[statusCol] : "translate";
+            if (!status.Equals("translate", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string path = row[pathCol].Replace('\\', '/').TrimStart('/');
+            string sheet = row[sheetCol];
+            string source = row[sourceCol];
+            string translation = row[translationCol];
+            string fieldHeader = headerCol >= 0 ? row[headerCol] : string.Empty;
+
+            if (string.IsNullOrWhiteSpace(path) || string.IsNullOrWhiteSpace(sheet) ||
+                string.IsNullOrEmpty(source) || string.IsNullOrEmpty(translation) ||
+                source == translation)
+                continue;
+
+            if (!int.TryParse(row[rowCol], out int rowIndex) || rowIndex <= 0 ||
+                !int.TryParse(row[colCol], out int colIndex) || colIndex <= 0)
+            {
+                throw new InvalidDataException(
+                    $"Invalid row/col in DAT slot CSV row {i + 1}.");
+            }
+
+            var key = (path.ToLowerInvariant(), sheet, rowIndex, colIndex);
+            DatSlotTranslation mapping = new(
+                path, sheet, rowIndex, colIndex, source, translation, fieldHeader);
+
+            if (result.TryGetValue(key, out DatSlotTranslation? existing))
+            {
+                if (existing.Source != mapping.Source ||
+                    existing.Translation != mapping.Translation)
+                {
+                    throw new InvalidDataException(
+                        $"Conflicting DAT slot mapping for {path} / {sheet} / row {rowIndex} / col {colIndex}.");
+                }
+
+                continue;
+            }
+
+            result[key] = mapping;
+        }
+
+        return result.Values
+            .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Sheet, StringComparer.Ordinal)
+            .ThenBy(x => x.Row)
+            .ThenBy(x => x.Col)
+            .ToList();
+    }
+
+    private static byte[] PatchDatSlots(
+        byte[] original,
+        string relativePath,
+        IReadOnlyList<DatSlotTranslation> slots,
+        out int replacements)
+    {
+        replacements = 0;
+        if (original.Length < 4)
+            throw new InvalidDataException("DAT is too small.");
+
+        bool plainTsv = original.AsSpan(0, 4).SequenceEqual("#TSV"u8);
+        byte[] plain;
+        byte[]? header = null;
+        byte[]? originalCipher = null;
+
+        if (plainTsv)
+        {
+            plain = original;
+        }
+        else
+        {
+            if (original.Length < DatFile.DatHeaderLength ||
+                (original.Length - DatFile.DatHeaderLength) % 16 != 0)
+            {
+                throw new InvalidDataException("Unsupported DAT container layout.");
+            }
+
+            header = original.AsSpan(0, (int)DatFile.DatHeaderLength).ToArray();
+            originalCipher = original.AsSpan((int)DatFile.DatHeaderLength).ToArray();
+            plain = DatFile.DecryptDat(originalCipher);
+
+            byte[] roundTrip = DatFile.EncryptDat(plain);
+            if (!roundTrip.AsSpan().SequenceEqual(originalCipher))
+                throw new InvalidDataException("DAT crypto round-trip verification failed.");
+        }
+
+        int contentLength = plain.Length;
+        while (contentLength > 0 && plain[contentLength - 1] == 0)
+            contentLength--;
+
+        string text = StrictUtf8.GetString(plain, 0, contentLength);
+        if (!text.StartsWith("#TSV", StringComparison.Ordinal))
+            throw new InvalidDataException("Exact DAT cell mode currently requires #TSV content.");
+
+        string patchedText = PatchTsvExactCells(
+            text,
+            relativePath,
+            slots,
+            out replacements);
+
+        if (replacements != slots.Count)
+        {
+            throw new InvalidDataException(
+                $"DAT exact-cell patch applied {replacements}/{slots.Count} requested cells.");
+        }
+
+        byte[] patchedPlain = Utf8NoBom.GetBytes(patchedText);
+        if (plainTsv)
+            return patchedPlain;
+
+        int paddedLength = (patchedPlain.Length + 15) & ~15;
+        byte[] padded = new byte[paddedLength];
+        patchedPlain.CopyTo(padded, 0);
+        byte[] cipher = DatFile.EncryptDat(padded);
+
+        byte[] result = new byte[header!.Length + cipher.Length];
+        Buffer.BlockCopy(header, 0, result, 0, header.Length);
+        Buffer.BlockCopy(cipher, 0, result, header.Length, cipher.Length);
+
+        uint oldChunkCount = BinaryPrimitives.ReadUInt32LittleEndian(header.AsSpan(8, 4));
+        uint oldBlockCount = (uint)(originalCipher!.Length / 16);
+        if (oldChunkCount == oldBlockCount)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(
+                result.AsSpan(8, 4),
+                (uint)(cipher.Length / 16));
+        }
+
+        byte[] verifyPlain = DatFile.DecryptDat(cipher);
+        if (!verifyPlain.AsSpan(0, patchedPlain.Length).SequenceEqual(patchedPlain))
+            throw new InvalidDataException("DAT exact-cell write verification failed.");
+
+        return result;
+    }
+
+    private static string PatchTsvExactCells(
+        string text,
+        string relativePath,
+        IReadOnlyList<DatSlotTranslation> slots,
+        out int replacements)
+    {
+        Dictionary<(string Sheet, int Row), List<DatSlotTranslation>> byRow =
+            slots.GroupBy(x => (x.Sheet, x.Row))
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderBy(x => x.Col).ToList());
+
+        HashSet<(string Sheet, int Row, int Col)> applied = [];
+        string currentSheet = string.Empty;
+        bool expectHeader = false;
+        int dataRow = 0;
+
+        string result = TransformPhysicalLines(text, line =>
+        {
+            if (line.Equals(DatFile.TsvStart, StringComparison.Ordinal))
+            {
+                currentSheet = string.Empty;
+                expectHeader = false;
+                dataRow = 0;
+                return line;
+            }
+
+            if (line.StartsWith(TsvSheet.SheetNameKey, StringComparison.Ordinal))
+            {
+                currentSheet = line.Substring(TsvSheet.SheetNameKey.Length);
+                expectHeader = true;
+                dataRow = 0;
+                return line;
+            }
+
+            if (line.Equals(DatFile.TsvEnd, StringComparison.Ordinal))
+            {
+                currentSheet = string.Empty;
+                expectHeader = false;
+                dataRow = 0;
+                return line;
+            }
+
+            if (string.IsNullOrEmpty(currentSheet))
+                return line;
+
+            if (expectHeader)
+            {
+                expectHeader = false;
+                return line;
+            }
+
+            dataRow++;
+            if (!byRow.TryGetValue((currentSheet, dataRow), out List<DatSlotTranslation>? rowSlots))
+                return line;
+
+            string[] cells = line.Split('\t');
+            foreach (DatSlotTranslation slot in rowSlots)
+            {
+                int index = slot.Col - 1;
+                if (index < 0 || index >= cells.Length)
+                {
+                    throw new InvalidDataException(
+                        $"{relativePath}: {currentSheet} row {dataRow} has {cells.Length} cols, " +
+                        $"requested col {slot.Col}.");
+                }
+
+                string actual = cells[index];
+                if (!string.Equals(actual, slot.Source, StringComparison.Ordinal))
+                {
+                    throw new InvalidDataException(
+                        $"{relativePath}: source mismatch at {currentSheet} row {dataRow} col {slot.Col}: " +
+                        $"expected={EscapeForLog(slot.Source)}, actual={EscapeForLog(actual)}.");
+                }
+
+                cells[index] = slot.Translation;
+                applied.Add((slot.Sheet, slot.Row, slot.Col));
+                Console.WriteLine(
+                    $"[DAT-SLOT] {relativePath} sheet={EscapeForLog(slot.Sheet)} " +
+                    $"row={slot.Row} col={slot.Col} header={EscapeForLog(slot.Header)} " +
+                    $"source={EscapeForLog(slot.Source)} -> {EscapeForLog(slot.Translation)}");
+            }
+
+            return string.Join('\t', cells);
+        });
+
+        replacements = applied.Count;
+        if (replacements != slots.Count)
+        {
+            IEnumerable<DatSlotTranslation> missing = slots.Where(
+                x => !applied.Contains((x.Sheet, x.Row, x.Col)));
+            string preview = string.Join(
+                "; ",
+                missing.Take(8).Select(
+                    x => $"{x.Sheet}/r{x.Row}/c{x.Col}"));
+            throw new InvalidDataException(
+                $"Missing exact DAT cells: applied {replacements}/{slots.Count}. {preview}");
         }
 
         return result;
