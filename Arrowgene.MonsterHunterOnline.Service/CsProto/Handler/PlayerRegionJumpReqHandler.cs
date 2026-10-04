@@ -41,6 +41,8 @@ public class PlayerRegionJumpReqHandler : CsProtoStructureHandler<PlayerRegionJu
         //Logger.Info($"Teleport Info: ({triggerName})");
 
         string instanceLevelId = client.State.levelId.ToString();
+        Logger.Info(client,
+            $"Region jump request: LevelId={instanceLevelId}, Trigger={triggerName}");
 
         string staticFolder = Path.Combine(Util.ExecutingDirectory(), "Files/Static");
         string filePath = Path.Combine(staticFolder, "RegionJump.csv");
@@ -146,11 +148,17 @@ public class PlayerRegionJumpReqHandler : CsProtoStructureHandler<PlayerRegionJu
                         PlayerRegionJump.Structure.RegionId = 0;
                         PlayerRegionJump.Structure.Transform = TargetPos;
 
+                        Logger.Info(client,
+                            $"Region jump matched: LevelId={instanceLevelId}, Trigger={triggerName}, " +
+                            $"Target=({posX},{posY},{posZ})");
                         client.SendCsProtoStructurePacket(PlayerRegionJump);
                         return;
                     }
                 }
             }
         }
+
+        Logger.Error(client,
+            $"Region jump mapping not found: LevelId={instanceLevelId}, Trigger={triggerName}, CryLevel={cryLevel}");
     }
 }
