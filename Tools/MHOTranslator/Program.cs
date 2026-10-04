@@ -19,6 +19,7 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "trace-path" => TracePathCommand(args.Skip(1).ToArray()),
     "diff-swf-strings" => DiffSwfStringsCommand(args.Skip(1).ToArray()),
     "scan-swf-ui-candidates" => ScanSwfUiCandidatesCommand(args.Skip(1).ToArray()),
+    "scan-english-ui-tree" => ScanEnglishUiTreeCommand(args.Skip(1).ToArray()),
     "derive-safe-catalog" => TranslationPatch.DeriveSafeCatalogCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
@@ -76,6 +77,11 @@ Commands:
       namespaces, multinames, method/parameter names and metadata, then emits
       exact DoABC slot candidates that look like player-facing text.
 
+  scan-english-ui-tree <input-dir> [--output <csv>] [--include-weak] [--max-mb <n>]
+      Inventories likely player-facing English text across an extracted English
+      patch tree. Supports SWF exact DoABC slots, DAT tables/XML/plain content
+      and ordinary UTF text, and prints the files with the most candidates.
+
   derive-safe-catalog <swf-diff.csv> <spanish-catalog.csv|dir> [--out <csv>]
       Builds an English->Spanish catalog only from string-pool slots that the
       working English patch already changed safely. Structural mismatches and
@@ -101,6 +107,280 @@ static int UnknownCommand(string command)
     return ShowHelp();
 }
 
+
+static int ScanEnglishUiTreeCommand(string[] args)
+{
+    if (args.Length < 1)
+    {
+        Console.Error.WriteLine(
+            "scan-english-ui-tree requires <input-dir> [--output <csv>] [--include-weak] [--max-mb <n>].");
+        return 2;
+    }
+
+    string root = Path.GetFullPath(args[0]);
+    if (!Directory.Exists(root))
+    {
+        Console.Error.WriteLine($"Input directory does not exist: {root}");
+        return 2;
+    }
+
+    string output = Path.GetFullPath(
+        GetOption(args, "--output") ??
+        Path.Combine(Environment.CurrentDirectory, "english-ui-tree.csv"));
+    bool includeWeak = args.Any(x => x.Equals("--include-weak", StringComparison.OrdinalIgnoreCase));
+    double maxMb = double.TryParse(GetOption(args, "--max-mb"), out double parsedMb) ? parsedMb : 32;
+    long maxBytes = (long)(Math.Max(0.1, maxMb) * 1024 * 1024);
+
+    List<(string Path, string Location, string Kind, string Source, string Confidence, string Reason)> rows = [];
+    Dictionary<string, (int Strong, int Medium, int Weak)> perFile = new(StringComparer.OrdinalIgnoreCase);
+
+    int examined = 0;
+    int swfFiles = 0;
+    int datFiles = 0;
+    int textFiles = 0;
+    int skippedLarge = 0;
+    int failures = 0;
+
+    void Add(string relative, string location, string kind, string source, string confidence, string reason)
+    {
+        if (confidence == "reject" || (confidence == "weak" && !includeWeak))
+            return;
+
+        rows.Add((relative, location, kind, source, confidence, reason));
+        perFile.TryGetValue(relative, out var counts);
+        counts = confidence switch
+        {
+            "strong" => (counts.Strong + 1, counts.Medium, counts.Weak),
+            "medium" => (counts.Strong, counts.Medium + 1, counts.Weak),
+            _ => (counts.Strong, counts.Medium, counts.Weak + 1),
+        };
+        perFile[relative] = counts;
+    }
+
+    foreach (string file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+    {
+        FileInfo info;
+        try { info = new FileInfo(file); }
+        catch { failures++; continue; }
+
+        if (info.Length > maxBytes)
+        {
+            skippedLarge++;
+            continue;
+        }
+
+        string relative = Path.GetRelativePath(root, file).Replace('\\', '/');
+        examined++;
+
+        try
+        {
+            if (SwfFile.IsSwf(file))
+            {
+                swfFiles++;
+                List<(List<string> Strings, HashSet<int> Structural)> pools =
+                    ExtractDoAbcStringDetails(File.ReadAllBytes(file), file);
+
+                for (int tag = 0; tag < pools.Count; tag++)
+                {
+                    List<string> strings = pools[tag].Strings;
+                    HashSet<int> structural = pools[tag].Structural;
+                    for (int index = 1; index < strings.Count; index++)
+                    {
+                        if (structural.Contains(index))
+                            continue;
+
+                        string value = strings[index];
+                        var cls = ClassifyUiCandidate(value);
+                        Add(relative, $"abc:{tag}/str:{index}", "swf-abc", value, cls.Confidence, cls.Reason);
+                    }
+                }
+
+                continue;
+            }
+
+            byte[] bytes = File.ReadAllBytes(file);
+
+            if (info.Extension.Equals(".dat", StringComparison.OrdinalIgnoreCase))
+            {
+                datFiles++;
+                DatFile dat = new();
+                dat.Open(bytes);
+
+                if (dat.ContentType == DatFile.DatContentType.TSV && dat.Sheets.Count > 0)
+                {
+                    foreach (TsvSheet sheet in dat.Sheets)
+                    {
+                        if (sheet.Table == null)
+                            continue;
+
+                        string sheetName = string.IsNullOrWhiteSpace(sheet.Name) ? "(unnamed)" : sheet.Name;
+                        string[] headers = sheet.TableHead ?? Array.Empty<string>();
+
+                        for (int r = 0; r < sheet.Table.Length; r++)
+                        {
+                            string[] row = sheet.Table[r] ?? Array.Empty<string>();
+                            for (int c = 0; c < row.Length; c++)
+                            {
+                                string value = NormalizeCandidate(row[c] ?? "");
+                                if (value.Length == 0)
+                                    continue;
+
+                                string header = c < headers.Length ? NormalizeCandidate(headers[c] ?? "") : $"col{c + 1}";
+                                var cls = ClassifyUiCandidate(value);
+                                (string role, string priority) = ClassifyDatField(header);
+
+                                string confidence = cls.Confidence;
+                                string reason = $"{cls.Reason};field={header};role={role};priority={priority}";
+                                if (priority == "high" && confidence is "medium" or "weak")
+                                    confidence = "strong";
+                                else if (priority == "medium" && confidence == "weak")
+                                    confidence = "medium";
+
+                                Add(
+                                    relative,
+                                    $"sheet:{sheetName}/row:{r + 1}/col:{c + 1}",
+                                    "dat-cell",
+                                    value,
+                                    confidence,
+                                    reason);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    string content = (dat.Content ?? "").TrimEnd('\0');
+                    if (content.TrimStart().StartsWith("<", StringComparison.Ordinal))
+                    {
+                        try
+                        {
+                            var doc = System.Xml.Linq.XDocument.Parse(content);
+                            int n = 0;
+                            foreach (var element in doc.Descendants())
+                            {
+                                if (element.HasElements)
+                                    continue;
+
+                                string value = NormalizeCandidate(element.Value);
+                                if (value.Length == 0)
+                                    continue;
+
+                                var cls = ClassifyUiCandidate(value);
+                                (string role, string priority) = ClassifyDatField(element.Name.LocalName);
+                                string confidence = cls.Confidence;
+                                if (priority == "high" && confidence is "medium" or "weak")
+                                    confidence = "strong";
+                                else if (priority == "medium" && confidence == "weak")
+                                    confidence = "medium";
+
+                                Add(
+                                    relative,
+                                    $"xml:{BuildXmlPath(element)}/value:{n++}",
+                                    "dat-xml",
+                                    value,
+                                    confidence,
+                                    $"{cls.Reason};field={element.Name.LocalName};role={role};priority={priority}");
+                            }
+                        }
+                        catch
+                        {
+                            string[] lines = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+                            for (int i = 0; i < lines.Length; i++)
+                            {
+                                string value = NormalizeCandidate(lines[i]);
+                                if (value.Length == 0) continue;
+                                var cls = ClassifyUiCandidate(value);
+                                Add(relative, $"dat-line:{i + 1}", "dat-text", value, cls.Confidence, cls.Reason);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        string[] lines = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+                        for (int i = 0; i < lines.Length; i++)
+                        {
+                            string value = NormalizeCandidate(lines[i]);
+                            if (value.Length == 0) continue;
+                            var cls = ClassifyUiCandidate(value);
+                            Add(relative, $"dat-line:{i + 1}", "dat-text", value, cls.Confidence, cls.Reason);
+                        }
+                    }
+                }
+
+                continue;
+            }
+
+            if (TryReadText(bytes, out string textValue, out _))
+            {
+                textFiles++;
+                string[] lines = textValue.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string value = NormalizeCandidate(lines[i]);
+                    if (value.Length == 0)
+                        continue;
+
+                    var cls = ClassifyUiCandidate(value);
+                    Add(relative, $"line:{i + 1}", "text", value, cls.Confidence, cls.Reason);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.Error.WriteLine($"[WARN] {relative}: {ex.Message}");
+        }
+    }
+
+    Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+    using (StreamWriter writer = new(output, false, new UTF8Encoding(false)))
+    {
+        writer.WriteLine("path,location,source_kind,source,translation,status,confidence,reason,notes");
+        foreach (var row in rows
+                     .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(x => x.Location, StringComparer.Ordinal))
+        {
+            writer.WriteLine(
+                $"{CsvCell(row.Path)},{CsvCell(row.Location)},{CsvCell(row.Kind)}," +
+                $"{CsvCell(row.Source)},,review,{row.Confidence},{CsvCell(row.Reason)},english_patch_tree");
+        }
+    }
+
+    Console.WriteLine($"Root:                  {root}");
+    Console.WriteLine($"Files examined:        {examined}");
+    Console.WriteLine($"SWF files:             {swfFiles}");
+    Console.WriteLine($"DAT files:             {datFiles}");
+    Console.WriteLine($"Text files:            {textFiles}");
+    Console.WriteLine($"Strong candidates:     {rows.Count(x => x.Confidence == "strong")}");
+    Console.WriteLine($"Medium candidates:     {rows.Count(x => x.Confidence == "medium")}");
+    Console.WriteLine($"Weak candidates:       {rows.Count(x => x.Confidence == "weak")}");
+    Console.WriteLine($"Weak included:         {includeWeak}");
+    Console.WriteLine($"Skipped large:         {skippedLarge}");
+    Console.WriteLine($"Failures:              {failures}");
+    Console.WriteLine($"Output:                {output}");
+
+    Console.WriteLine();
+    Console.WriteLine("Top files by likely player-facing text:");
+    foreach (var item in perFile
+                 .Select(x => new
+                 {
+                     Path = x.Key,
+                     x.Value.Strong,
+                     x.Value.Medium,
+                     x.Value.Weak,
+                     Total = x.Value.Strong + x.Value.Medium + x.Value.Weak
+                 })
+                 .OrderByDescending(x => x.Strong)
+                 .ThenByDescending(x => x.Medium)
+                 .ThenByDescending(x => x.Total)
+                 .Take(40))
+    {
+        Console.WriteLine(
+            $"{item.Strong,5} strong  {item.Medium,5} medium  {item.Weak,5} weak  {item.Path}");
+    }
+
+    return failures == 0 ? 0 : 5;
+}
 
 static int ScanSwfUiCandidatesCommand(string[] args)
 {
