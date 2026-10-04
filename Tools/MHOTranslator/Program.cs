@@ -18,6 +18,7 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "inspect-entry" => InspectEntryCommand(args.Skip(1).ToArray()),
     "trace-path" => TracePathCommand(args.Skip(1).ToArray()),
     "diff-swf-strings" => DiffSwfStringsCommand(args.Skip(1).ToArray()),
+    "scan-swf-ui-candidates" => ScanSwfUiCandidatesCommand(args.Skip(1).ToArray()),
     "derive-safe-catalog" => TranslationPatch.DeriveSafeCatalogCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
@@ -70,6 +71,11 @@ Commands:
       Intended to discover exactly which strings the working English patch
       changed relative to the original Chinese SWF.
 
+  scan-swf-ui-candidates <english.swf> [--output <csv>] [--include-weak]
+      Scans the working English SWF directly. Excludes strings used by ABC
+      namespaces, multinames, method/parameter names and metadata, then emits
+      exact DoABC slot candidates that look like player-facing text.
+
   derive-safe-catalog <swf-diff.csv> <spanish-catalog.csv|dir> [--out <csv>]
       Builds an English->Spanish catalog only from string-pool slots that the
       working English patch already changed safely. Structural mismatches and
@@ -95,6 +101,155 @@ static int UnknownCommand(string command)
     return ShowHelp();
 }
 
+
+static int ScanSwfUiCandidatesCommand(string[] args)
+{
+    if (args.Length < 1)
+    {
+        Console.Error.WriteLine(
+            "scan-swf-ui-candidates requires <english.swf> [--output <csv>] [--include-weak].");
+        return 2;
+    }
+
+    string swfPath = Path.GetFullPath(args[0]);
+    string output = Path.GetFullPath(
+        GetOption(args, "--output") ??
+        Path.Combine(Environment.CurrentDirectory, "swf-ui-candidates.csv"));
+    bool includeWeak = args.Any(x => x.Equals("--include-weak", StringComparison.OrdinalIgnoreCase));
+
+    if (!File.Exists(swfPath))
+    {
+        Console.Error.WriteLine($"SWF does not exist: {swfPath}");
+        return 2;
+    }
+
+    try
+    {
+        List<(List<string> Strings, HashSet<int> Structural)> pools =
+            ExtractDoAbcStringDetails(File.ReadAllBytes(swfPath), swfPath);
+
+        int totalStrings = 0;
+        int structural = 0;
+        int rejected = 0;
+        int strong = 0;
+        int medium = 0;
+        int weak = 0;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+        using StreamWriter writer = new(output, false, new UTF8Encoding(false));
+        writer.WriteLine("source,translation,status,abc_tag,string_index,confidence,reason,notes");
+
+        for (int tag = 0; tag < pools.Count; tag++)
+        {
+            List<string> strings = pools[tag].Strings;
+            HashSet<int> structuralIndexes = pools[tag].Structural;
+
+            for (int index = 1; index < strings.Count; index++)
+            {
+                totalStrings++;
+                string value = strings[index];
+
+                if (structuralIndexes.Contains(index))
+                {
+                    structural++;
+                    continue;
+                }
+
+                (string Confidence, string Reason) classification = ClassifyUiCandidate(value);
+                if (classification.Confidence == "reject")
+                {
+                    rejected++;
+                    continue;
+                }
+
+                if (classification.Confidence == "strong") strong++;
+                else if (classification.Confidence == "medium") medium++;
+                else weak++;
+
+                if (classification.Confidence == "weak" && !includeWeak)
+                    continue;
+
+                writer.WriteLine(
+                    $"{CsvCell(value)},,review,{tag},{index}," +
+                    $"{classification.Confidence},{CsvCell(classification.Reason)}," +
+                    $"english_patch_exact_slot");
+            }
+        }
+
+        Console.WriteLine($"SWF:                   {swfPath}");
+        Console.WriteLine($"DoABC tags:            {pools.Count}");
+        Console.WriteLine($"String pool entries:   {totalStrings}");
+        Console.WriteLine($"Structural excluded:   {structural}");
+        Console.WriteLine($"Heuristic rejected:    {rejected}");
+        Console.WriteLine($"Strong UI candidates:  {strong}");
+        Console.WriteLine($"Medium UI candidates:  {medium}");
+        Console.WriteLine($"Weak UI candidates:    {weak}");
+        Console.WriteLine($"Weak included:         {includeWeak}");
+        Console.WriteLine($"Output:                 {output}");
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"scan-swf-ui-candidates failed: {ex}");
+        return 7;
+    }
+}
+
+static (string Confidence, string Reason) ClassifyUiCandidate(string value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+        return ("reject", "empty");
+
+    string text = value.Trim();
+    if (text.Length < 2 || text.Length > 500)
+        return ("reject", "length");
+
+    if (text.Contains('\\') || text.Contains(".as", StringComparison.OrdinalIgnoreCase) ||
+        text.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+        text.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        return ("reject", "path_or_url");
+
+    if (text.StartsWith("__", StringComparison.Ordinal) ||
+        text.Contains("::", StringComparison.Ordinal) ||
+        (text.Contains(':') && !text.Contains(' ')) ||
+        (text.Contains('.') && !text.Contains(' ') && !char.IsDigit(text[0])))
+        return ("reject", "code_like");
+
+    bool hasLetter = text.Any(char.IsLetter);
+    if (!hasLetter)
+        return ("reject", "no_letters");
+
+    int spaces = text.Count(char.IsWhiteSpace);
+    bool hasCjk = text.Any(c =>
+        (c >= '\u3400' && c <= '\u4DBF') ||
+        (c >= '\u4E00' && c <= '\u9FFF'));
+    bool hasSentencePunctuation = text.IndexOfAny(['!', '?', '.', ',', ':', ';', '(', ')', '[', ']', '%']) >= 0;
+
+    if (hasCjk)
+        return ("strong", "contains_cjk_literal");
+
+    if (spaces >= 1)
+    {
+        if (text.Contains('_') && !hasSentencePunctuation)
+            return ("medium", "multiword_with_identifier_marker");
+
+        return ("strong", "multiword_literal");
+    }
+
+    if (text.Contains('_'))
+        return ("reject", "identifier_underscore");
+
+    if (text.All(c => char.IsUpper(c) || char.IsDigit(c) || c == '-' || c == '+'))
+        return ("reject", "constant_like");
+
+    if (char.IsUpper(text[0]) && text.Skip(1).Any(char.IsLower))
+        return ("medium", "capitalized_single_word");
+
+    if (hasSentencePunctuation)
+        return ("medium", "punctuated_literal");
+
+    return ("weak", "single_word_lowercase");
+}
 
 static int DiffSwfStringsCommand(string[] args)
 {
