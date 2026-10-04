@@ -61,6 +61,15 @@ public class InstanceVerifyReqHandler : CsProtoStructureHandler<InstanceVerifyRe
         client.Character = character;
         client.Inventory = new Inventory(character.Id, _database);
 
+        // Battle-server connections create a fresh Client/PlayerState. Persist the
+        // instance level carried in ServiceId so region-jump handlers know which
+        // map/trigger set belongs to this hunt.
+        client.State.prevLevelId = client.State.levelId;
+        client.State.levelId = req.ServiceId;
+        client.State.MainInstanceLevelId = req.ServiceId;
+        Logger.Info(client,
+            $"Battle instance state initialized: LevelId={client.State.levelId}, ServiceId={req.ServiceId}");
+
         CsCsProtoStructurePacket<PlayerInitInfo> playerInitInfo = CsProtoResponse.PlayerInitInfo;
         playerInitInfo.Structure.Pose.t.x = 1681.2958f;
         playerInitInfo.Structure.Pose.t.y = 346.80392f;
