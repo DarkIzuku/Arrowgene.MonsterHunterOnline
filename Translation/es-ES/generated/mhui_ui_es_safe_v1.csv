@@ -297,7 +297,8 @@ Water Res,Res. agua,translate,2836,61,strong,multiword_literal,english_patch_exa
    Can upgrade,   Se puede mejorar,translate,2836,101,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
  Skill Set, Conjunto de habilidades,translate,2836,103,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
  time(s), vez/veces,translate,2836,105,medium,punctuated_literal,english_patch_exact_slot;approved_safe_v1
-Attack,Ataque,translate,2836,203,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1Attack +,Ataque +,translate,2836,204,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
+Attack,Ataque,translate,2836,203,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
+Attack +,Ataque +,translate,2836,204,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
 Blast,Explosión,translate,2836,209,medium,capitalized_single_word,english_patch_exact_slot;approved_safe_v1
 Chance on cast,Probabilidad al lanzar,translate,2836,215,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1
 Character Bound,Ligado al personaje,translate,2836,216,strong,multiword_literal,english_patch_exact_slot;approved_safe_v1

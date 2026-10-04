@@ -892,6 +892,12 @@ internal static class TranslationPatch
             for (int i = 1; i < rows.Count; i++)
             {
                 string[] row = rows[i];
+                if (row.Length != header.Length)
+                {
+                    throw new InvalidDataException(
+                        $"Malformed slot-aware CSV row {i + 1} in {catalog}: expected {header.Length} columns, got {row.Length}.");
+                }
+
                 if (sourceCol >= row.Length || translationCol >= row.Length ||
                     tagCol >= row.Length || indexCol >= row.Length)
                     continue;
