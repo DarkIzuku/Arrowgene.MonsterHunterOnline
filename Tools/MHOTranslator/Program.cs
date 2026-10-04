@@ -13,6 +13,7 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "scan" => ScanCommand(args.Skip(1).ToArray()),
     "apply" => TranslationPatch.ApplyCommand(args.Skip(1).ToArray()),
     "apply-dat-slots" => TranslationPatch.ApplyDatSlotsCommand(args.Skip(1).ToArray()),
+    "apply-english-cleanup" => TranslationPatch.ApplyEnglishCleanupCommand(args.Skip(1).ToArray()),
     "build-ifs" => TranslationPatch.BuildIfsCommand(args.Skip(1).ToArray()),
     "clone-ifs" => TranslationPatch.CloneIfsCommand(args.Skip(1).ToArray()),
     "inspect-ifs" => TranslationPatch.InspectIfsCommand(args.Skip(1).ToArray()),
@@ -52,6 +53,12 @@ Commands:
       Applies exact DAT TSV cells using path + sheet + row + col coordinates.
       The current source value must match before replacement, and the encrypted
       DAT payload is round-trip verified before writing.
+
+  apply-english-cleanup <input-dir> <catalog.csv> [--out <patched-dir>] [--only-path <path>]
+      Improves the working English patch conservatively. SWF replacements are
+      limited to non-structural DoABC string slots. DAT replacements are limited
+      to likely player-facing fields and are padded so the encrypted DAT payload
+      keeps exactly the same UTF-8 length.
 
   build-ifs <base.ifs> <patched-dir> [--out <output.ifs>]
       Replaces translated resources in a copy of the base nIFS archive,

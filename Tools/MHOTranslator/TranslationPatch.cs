@@ -27,6 +27,172 @@ internal static class TranslationPatch
         string Header);
 
 
+
+    public static int ApplyEnglishCleanupCommand(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine(
+                "apply-english-cleanup requires <input-dir> <catalog.csv> [--out <patched-dir>] [--only-path <path>].");
+            return 2;
+        }
+
+        string inputRoot = Path.GetFullPath(args[0]);
+        string catalogPath = Path.GetFullPath(args[1]);
+        string outputRoot = Path.GetFullPath(
+            GetOption(args, "--out") ??
+            Path.Combine(Environment.CurrentDirectory, "mho-english-cleanup"));
+        string? onlyPath = GetOption(args, "--only-path");
+        if (!string.IsNullOrWhiteSpace(onlyPath))
+            onlyPath = onlyPath.Replace('\\', '/').TrimStart('/');
+
+        if (!Directory.Exists(inputRoot))
+        {
+            Console.Error.WriteLine($"Input directory does not exist: {inputRoot}");
+            return 2;
+        }
+
+        if (!File.Exists(catalogPath))
+        {
+            Console.Error.WriteLine($"Catalog file does not exist: {catalogPath}");
+            return 2;
+        }
+
+        Dictionary<string, string> translations;
+        try
+        {
+            translations = LoadTranslations(catalogPath);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to load English cleanup catalog: {ex.Message}");
+            return 3;
+        }
+
+        Console.WriteLine($"Input:          {inputRoot}");
+        Console.WriteLine($"Catalog:        {catalogPath}");
+        Console.WriteLine($"Safe mappings:  {translations.Count}");
+        Console.WriteLine($"Output:         {outputRoot}");
+        Console.WriteLine("SWF policy:     exact non-structural DoABC slots");
+        Console.WriteLine("DAT policy:     exact UI cells, identical UTF-8 byte length");
+
+        Directory.CreateDirectory(outputRoot);
+
+        int examined = 0;
+        int modifiedFiles = 0;
+        int swfFiles = 0;
+        int datFiles = 0;
+        int swfReplacements = 0;
+        int datReplacements = 0;
+        int datTooLong = 0;
+        int failures = 0;
+
+        foreach (string file in Directory.EnumerateFiles(inputRoot, "*", SearchOption.AllDirectories))
+        {
+            string relative = Path.GetRelativePath(inputRoot, file).Replace('\\', '/');
+            if (!string.IsNullOrWhiteSpace(onlyPath) &&
+                !relative.Equals(onlyPath, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            string extension = Path.GetExtension(file).ToLowerInvariant();
+            if (extension != ".swf" && extension != ".dat")
+                continue;
+
+            examined++;
+
+            try
+            {
+                byte[] original = File.ReadAllBytes(file);
+                byte[]? patched = null;
+                int fileReplacements = 0;
+
+                if (extension == ".swf" && SwfFile.IsSwf(file))
+                {
+                    List<SwfSlotTranslation> slots =
+                        FindSafeEnglishSwfSlots(original, relative, translations);
+
+                    if (slots.Count > 0)
+                    {
+                        patched = PatchSwfSlots(
+                            original,
+                            relative,
+                            slots,
+                            out fileReplacements);
+                        swfFiles++;
+                        swfReplacements += fileReplacements;
+                    }
+                }
+                else if (extension == ".dat")
+                {
+                    List<DatSlotTranslation> slots =
+                        FindSafeEnglishDatSlots(
+                            original,
+                            relative,
+                            translations,
+                            out int skippedTooLong);
+                    datTooLong += skippedTooLong;
+
+                    if (slots.Count > 0)
+                    {
+                        patched = PatchDatSlots(
+                            original,
+                            relative,
+                            slots,
+                            out fileReplacements);
+                        datFiles++;
+                        datReplacements += fileReplacements;
+                    }
+                }
+
+                if (patched == null || fileReplacements == 0)
+                    continue;
+
+                string target = Path.Combine(
+                    outputRoot,
+                    relative.Replace('/', Path.DirectorySeparatorChar));
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.WriteAllBytes(target, patched);
+
+                modifiedFiles++;
+                Console.WriteLine(
+                    $"[PATCH] {relative} ({fileReplacements} safe English replacements)");
+            }
+            catch (Exception ex)
+            {
+                failures++;
+                Console.Error.WriteLine($"[FAIL] {relative}: {ex.Message}");
+            }
+        }
+
+        string manifest = Path.Combine(outputRoot, "_english-cleanup-manifest.txt");
+        File.WriteAllText(
+            manifest,
+            $"catalog={catalogPath}{Environment.NewLine}" +
+            $"safe_mappings={translations.Count}{Environment.NewLine}" +
+            $"examined={examined}{Environment.NewLine}" +
+            $"modified_files={modifiedFiles}{Environment.NewLine}" +
+            $"swf_files={swfFiles}{Environment.NewLine}" +
+            $"dat_files={datFiles}{Environment.NewLine}" +
+            $"swf_replacements={swfReplacements}{Environment.NewLine}" +
+            $"dat_replacements={datReplacements}{Environment.NewLine}" +
+            $"dat_skipped_too_long={datTooLong}{Environment.NewLine}" +
+            $"failures={failures}{Environment.NewLine}",
+            Utf8NoBom);
+
+        Console.WriteLine();
+        Console.WriteLine($"Examined:             {examined}");
+        Console.WriteLine($"Modified files:       {modifiedFiles}");
+        Console.WriteLine($"SWF files:            {swfFiles}");
+        Console.WriteLine($"DAT files:            {datFiles}");
+        Console.WriteLine($"SWF replacements:     {swfReplacements}");
+        Console.WriteLine($"DAT replacements:     {datReplacements}");
+        Console.WriteLine($"DAT skipped too long: {datTooLong}");
+        Console.WriteLine($"Failures:             {failures}");
+        Console.WriteLine($"Manifest:             {manifest}");
+
+        return failures == 0 ? 0 : 10;
+    }
+
     public static int ApplyDatSlotsCommand(string[] args)
     {
         if (args.Length < 2)
@@ -1142,6 +1308,449 @@ internal static class TranslationPatch
         return result;
     }
 
+
+
+    private static List<SwfSlotTranslation> FindSafeEnglishSwfSlots(
+        byte[] original,
+        string relativePath,
+        IReadOnlyDictionary<string, string> translations)
+    {
+        List<(List<string> Strings, HashSet<int> Structural)> pools =
+            ExtractEnglishCleanupSwfDetails(original, relativePath);
+
+        List<SwfSlotTranslation> result = [];
+        for (int tag = 0; tag < pools.Count; tag++)
+        {
+            List<string> strings = pools[tag].Strings;
+            HashSet<int> structural = pools[tag].Structural;
+
+            for (int index = 1; index < strings.Count; index++)
+            {
+                if (structural.Contains(index))
+                    continue;
+
+                string source = strings[index];
+                if (!ContainsCjk(source))
+                    continue;
+
+                if (!translations.TryGetValue(source, out string? translation) ||
+                    string.IsNullOrWhiteSpace(translation) ||
+                    ContainsCjk(translation))
+                    continue;
+
+                result.Add(new SwfSlotTranslation(
+                    tag,
+                    index,
+                    source,
+                    translation,
+                    source));
+            }
+        }
+
+        return result;
+    }
+
+    private static List<DatSlotTranslation> FindSafeEnglishDatSlots(
+        byte[] original,
+        string relativePath,
+        IReadOnlyDictionary<string, string> translations,
+        out int skippedTooLong)
+    {
+        skippedTooLong = 0;
+        DatFile dat = new();
+        dat.Open(original);
+
+        if (dat.ContentType != DatFile.DatContentType.TSV || dat.Sheets.Count == 0)
+            return [];
+
+        List<DatSlotTranslation> result = [];
+
+        foreach (TsvSheet sheet in dat.Sheets)
+        {
+            if (sheet.TableHead == null || sheet.Table == null)
+                continue;
+
+            string sheetName = string.IsNullOrWhiteSpace(sheet.Name)
+                ? "(unnamed)"
+                : sheet.Name;
+            string[] headers = sheet.TableHead;
+
+            for (int r = 0; r < sheet.Table.Length; r++)
+            {
+                string[] row = sheet.Table[r] ?? Array.Empty<string>();
+                for (int c = 0; c < row.Length; c++)
+                {
+                    string header = c < headers.Length ? headers[c] ?? "" : $"col{c + 1}";
+                    if (!IsSafeEnglishCleanupDatField(header))
+                        continue;
+
+                    string raw = row[c] ?? "";
+                    if (!ContainsCjk(raw))
+                        continue;
+
+                    string trimmed = raw.Trim();
+                    if (trimmed.Length == 0 ||
+                        !translations.TryGetValue(trimmed, out string? translation) ||
+                        string.IsNullOrWhiteSpace(translation) ||
+                        ContainsCjk(translation))
+                        continue;
+
+                    string leading = raw.Substring(0, raw.Length - raw.TrimStart().Length);
+                    string trailing = raw.Substring(raw.TrimEnd().Length);
+                    string candidate = leading + translation + trailing;
+
+                    int sourceBytes = Utf8NoBom.GetByteCount(raw);
+                    int translatedBytes = Utf8NoBom.GetByteCount(candidate);
+                    if (translatedBytes > sourceBytes)
+                    {
+                        skippedTooLong++;
+                        Console.WriteLine(
+                            $"[DAT-SKIP-LENGTH] {relativePath} sheet={EscapeForLog(sheetName)} " +
+                            $"row={r + 1} col={c + 1} sourceBytes={sourceBytes} englishBytes={translatedBytes} " +
+                            $"source={EscapeForLog(trimmed)} -> {EscapeForLog(translation)}");
+                        continue;
+                    }
+
+                    candidate += new string(' ', sourceBytes - translatedBytes);
+                    if (Utf8NoBom.GetByteCount(candidate) != sourceBytes)
+                        throw new InvalidDataException("Failed to preserve exact DAT UTF-8 byte length.");
+
+                    result.Add(new DatSlotTranslation(
+                        relativePath,
+                        sheetName,
+                        r + 1,
+                        c + 1,
+                        raw,
+                        candidate,
+                        header));
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private static bool ContainsCjk(string value)
+    {
+        foreach (char c in value)
+        {
+            if ((c >= '\u3400' && c <= '\u4DBF') ||
+                (c >= '\u4E00' && c <= '\u9FFF'))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsSafeEnglishCleanupDatField(string header)
+    {
+        string h = (header ?? "").Trim();
+        if (h.Length == 0)
+            return false;
+
+        string lower = h.ToLowerInvariant();
+
+        string[] safeEnglish =
+        [
+            "name", "displayname", "showname", "title", "description", "desc",
+            "message", "text", "note", "completenote", "tip", "help", "label",
+            "caption", "prompt", "tooltip", "hint", "objective", "content",
+            "itemname", "skillname", "questname", "npcname", "monstername",
+            "levelname", "weaponname", "armorname", "buffname", "button"
+        ];
+
+        if (safeEnglish.Any(x =>
+                lower.Equals(x, StringComparison.OrdinalIgnoreCase) ||
+                lower.Contains(x, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        string[] safeChinese =
+        [
+            "名字", "名称", "标题", "说明", "描述", "备注", "文本", "消息",
+            "对白", "对话", "内容", "提示", "帮助", "按钮", "任务描述",
+            "物品名称", "配方名称", "怪物名称", "技能名称", "任务名称",
+            "效果说明", "技能说明", "标题栏内容"
+        ];
+
+        return safeChinese.Any(x => h.Contains(x, StringComparison.Ordinal));
+    }
+
+    private static List<(List<string> Strings, HashSet<int> Structural)> ExtractEnglishCleanupSwfDetails(
+        byte[] bytes,
+        string name)
+    {
+        SwfFile swf = SwfFile.Open(bytes, name);
+        List<(List<string>, HashSet<int>)> result = new();
+
+        foreach (SwfTag tag in swf.Tags)
+        {
+            if (tag.Code != 82)
+                continue;
+
+            ReadOnlySpan<byte> tagData = tag.Data.Span;
+            if (tagData.Length < 5)
+                continue;
+
+            int offset = 4;
+            while (offset < tagData.Length && tagData[offset] != 0)
+                offset++;
+            if (offset >= tagData.Length)
+                continue;
+
+            offset++;
+            ReadOnlySpan<byte> abc = tagData.Slice(offset);
+            if (abc.Length < 4)
+                continue;
+
+            int p = 4;
+
+            uint intCount = ReadU30(abc, ref p);
+            for (uint i = 1; i < intCount; i++) SkipU32(abc, ref p);
+
+            uint uintCount = ReadU30(abc, ref p);
+            for (uint i = 1; i < uintCount; i++) SkipU32(abc, ref p);
+
+            uint doubleCount = ReadU30(abc, ref p);
+            if (doubleCount > 0)
+            {
+                int bytesToSkip = checked((int)((doubleCount - 1) * 8));
+                if (bytesToSkip > abc.Length - p)
+                    throw new InvalidDataException("ABC double pool exceeds DoABC tag.");
+                p += bytesToSkip;
+            }
+
+            uint stringCount = ReadU30(abc, ref p);
+            List<string> strings = new(checked((int)stringCount)) { string.Empty };
+            for (uint i = 1; i < stringCount; i++)
+            {
+                uint length = ReadU30(abc, ref p);
+                int len = checked((int)length);
+                if (len > abc.Length - p)
+                    throw new InvalidDataException("ABC string exceeds DoABC tag.");
+
+                ReadOnlySpan<byte> raw = abc.Slice(p, len);
+                p += len;
+                try
+                {
+                    strings.Add(StrictUtf8.GetString(raw));
+                }
+                catch (DecoderFallbackException)
+                {
+                    strings.Add(string.Empty);
+                }
+            }
+
+            HashSet<int> structural = new();
+            void Mark(uint index)
+            {
+                if (index > 0 && index < stringCount)
+                    structural.Add(checked((int)index));
+            }
+
+            uint namespaceCount = ReadU30(abc, ref p);
+            for (uint i = 1; i < namespaceCount; i++)
+            {
+                if (p >= abc.Length)
+                    throw new InvalidDataException("ABC namespace pool truncated.");
+                p++;
+                Mark(ReadU30(abc, ref p));
+            }
+
+            uint nsSetCount = ReadU30(abc, ref p);
+            for (uint i = 1; i < nsSetCount; i++)
+            {
+                uint count = ReadU30(abc, ref p);
+                for (uint j = 0; j < count; j++) _ = ReadU30(abc, ref p);
+            }
+
+            uint multinameCount = ReadU30(abc, ref p);
+            for (uint i = 1; i < multinameCount; i++)
+            {
+                if (p >= abc.Length)
+                    throw new InvalidDataException("ABC multiname pool truncated.");
+
+                byte kind = abc[p++];
+                switch (kind)
+                {
+                    case 0x07:
+                    case 0x0D:
+                        _ = ReadU30(abc, ref p);
+                        Mark(ReadU30(abc, ref p));
+                        break;
+                    case 0x0F:
+                    case 0x10:
+                        Mark(ReadU30(abc, ref p));
+                        break;
+                    case 0x11:
+                    case 0x12:
+                        break;
+                    case 0x09:
+                    case 0x0E:
+                        Mark(ReadU30(abc, ref p));
+                        _ = ReadU30(abc, ref p);
+                        break;
+                    case 0x1B:
+                    case 0x1C:
+                        _ = ReadU30(abc, ref p);
+                        break;
+                    case 0x1D:
+                        _ = ReadU30(abc, ref p);
+                        uint paramCount = ReadU30(abc, ref p);
+                        for (uint j = 0; j < paramCount; j++) _ = ReadU30(abc, ref p);
+                        break;
+                    default:
+                        throw new InvalidDataException(
+                            $"Unsupported ABC multiname kind 0x{kind:X2}.");
+                }
+            }
+
+            uint methodCount = ReadU30(abc, ref p);
+            for (uint i = 0; i < methodCount; i++)
+            {
+                uint paramCount = ReadU30(abc, ref p);
+                _ = ReadU30(abc, ref p);
+                for (uint j = 0; j < paramCount; j++) _ = ReadU30(abc, ref p);
+                Mark(ReadU30(abc, ref p));
+
+                if (p >= abc.Length)
+                    throw new InvalidDataException("ABC method_info truncated.");
+                byte flags = abc[p++];
+
+                if ((flags & 0x08) != 0)
+                {
+                    uint optionCount = ReadU30(abc, ref p);
+                    for (uint j = 0; j < optionCount; j++)
+                    {
+                        _ = ReadU30(abc, ref p);
+                        if (p >= abc.Length)
+                            throw new InvalidDataException("ABC option_info truncated.");
+                        p++;
+                    }
+                }
+
+                if ((flags & 0x80) != 0)
+                {
+                    for (uint j = 0; j < paramCount; j++)
+                        Mark(ReadU30(abc, ref p));
+                }
+            }
+
+            uint metadataCount = ReadU30(abc, ref p);
+            for (uint i = 0; i < metadataCount; i++)
+            {
+                Mark(ReadU30(abc, ref p));
+                uint itemCount = ReadU30(abc, ref p);
+                for (uint j = 0; j < itemCount; j++) Mark(ReadU30(abc, ref p));
+                for (uint j = 0; j < itemCount; j++) Mark(ReadU30(abc, ref p));
+            }
+
+            uint classCount = ReadU30(abc, ref p);
+            for (uint i = 0; i < classCount; i++)
+            {
+                _ = ReadU30(abc, ref p);
+                _ = ReadU30(abc, ref p);
+                if (p >= abc.Length)
+                    throw new InvalidDataException("ABC instance_info truncated.");
+                byte flags = abc[p++];
+                if ((flags & 0x08) != 0) _ = ReadU30(abc, ref p);
+
+                uint interfaceCount = ReadU30(abc, ref p);
+                for (uint j = 0; j < interfaceCount; j++) _ = ReadU30(abc, ref p);
+
+                _ = ReadU30(abc, ref p);
+                SkipEnglishCleanupTraits(abc, ref p);
+            }
+
+            for (uint i = 0; i < classCount; i++)
+            {
+                _ = ReadU30(abc, ref p);
+                SkipEnglishCleanupTraits(abc, ref p);
+            }
+
+            uint scriptCount = ReadU30(abc, ref p);
+            for (uint i = 0; i < scriptCount; i++)
+            {
+                _ = ReadU30(abc, ref p);
+                SkipEnglishCleanupTraits(abc, ref p);
+            }
+
+            uint bodyCount = ReadU30(abc, ref p);
+            for (uint i = 0; i < bodyCount; i++)
+            {
+                _ = ReadU30(abc, ref p);
+                _ = ReadU30(abc, ref p);
+                _ = ReadU30(abc, ref p);
+                _ = ReadU30(abc, ref p);
+                _ = ReadU30(abc, ref p);
+
+                int codeLength = checked((int)ReadU30(abc, ref p));
+                if (codeLength > abc.Length - p)
+                    throw new InvalidDataException("ABC method body code exceeds tag.");
+                p += codeLength;
+
+                uint exceptionCount = ReadU30(abc, ref p);
+                for (uint j = 0; j < exceptionCount; j++)
+                {
+                    _ = ReadU30(abc, ref p);
+                    _ = ReadU30(abc, ref p);
+                    _ = ReadU30(abc, ref p);
+                    _ = ReadU30(abc, ref p);
+                    _ = ReadU30(abc, ref p);
+                }
+
+                SkipEnglishCleanupTraits(abc, ref p);
+            }
+
+            result.Add((strings, structural));
+        }
+
+        return result;
+    }
+
+    private static void SkipEnglishCleanupTraits(ReadOnlySpan<byte> abc, ref int p)
+    {
+        uint traitCount = ReadU30(abc, ref p);
+        for (uint i = 0; i < traitCount; i++)
+        {
+            _ = ReadU30(abc, ref p);
+            if (p >= abc.Length)
+                throw new InvalidDataException("ABC trait truncated.");
+
+            byte kindAttr = abc[p++];
+            int kind = kindAttr & 0x0F;
+            switch (kind)
+            {
+                case 0:
+                case 6:
+                    _ = ReadU30(abc, ref p);
+                    _ = ReadU30(abc, ref p);
+                    uint vindex = ReadU30(abc, ref p);
+                    if (vindex != 0)
+                    {
+                        if (p >= abc.Length)
+                            throw new InvalidDataException("ABC trait value kind truncated.");
+                        p++;
+                    }
+                    break;
+                case 1:
+                case 2:
+                case 3:
+                case 4:
+                case 5:
+                    _ = ReadU30(abc, ref p);
+                    _ = ReadU30(abc, ref p);
+                    break;
+                default:
+                    throw new InvalidDataException($"Unsupported ABC trait kind {kind}.");
+            }
+
+            if ((kindAttr & 0x40) != 0)
+            {
+                uint metadataCount = ReadU30(abc, ref p);
+                for (uint j = 0; j < metadataCount; j++) _ = ReadU30(abc, ref p);
+            }
+        }
+    }
 
     private static List<DatSlotTranslation> LoadDatSlotTranslations(string catalogPath)
     {

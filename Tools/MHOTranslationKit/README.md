@@ -93,3 +93,25 @@ The goal is maximum Spanish coverage without unnatural literal translations.
 Use official Spanish Monster Hunter terminology where available. Preserve proper
 names and brands when translating them would make the game less correct. Ambiguous
 MHO-exclusive names remain in \`review\` until their context is known.
+
+
+## Enhanced English patch cleanup
+
+The kit also includes a conservative cleanup pass for Chinese text left behind
+by the community English patch:
+
+    powershell -ExecutionPolicy Bypass -File .\BuildEnglishCleanup.ps1 -BaseIfs "D:\Juegos\Monster Hunter Online\Cliente\Bin\Client\IIPS\iipsdownload\eng_patch_english_backup.ifs" -ExtractedDir "D:\MHO-Translation\eng_patch_extracted"
+
+Safety rules:
+
+- SWF strings are changed only in non-structural DoABC string-pool slots.
+- DAT strings are changed only in likely player-facing fields.
+- DAT replacements never increase or decrease the UTF-8 byte length; shorter
+  English text is padded, preserving the encrypted DAT payload size.
+- Internal IDs, paths, classes, ActionScript names and unknown CJK are left
+  untouched.
+- The output archive is reopened and modified entries are verified.
+
+Default output:
+
+    D:\MHO-Translation\eng_patch_enhanced.ifs
