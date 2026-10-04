@@ -19,7 +19,9 @@ param(
 
     [string]$UiSmokeReplacement = "",
 
-    [switch]$UiSmokeInPlaceEqual
+    [switch]$UiSmokeInPlaceEqual,
+
+    [switch]$SlotAware
 )
 
 $ErrorActionPreference = "Stop"
@@ -78,7 +80,11 @@ Write-Host ""
 Write-Host "[1/2] Applying approved Spanish translations..."
 if ($UiSmoke) {
     if ([string]::IsNullOrWhiteSpace($UiSmokeSource)) {
-        & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf"
+        if ($SlotAware) {
+            & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf" --slot-aware
+        } else {
+            & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf"
+        }
     } elseif ($UiSmokeInPlaceEqual) {
         if ([string]::IsNullOrEmpty($UiSmokeReplacement)) {
             throw "UiSmokeInPlaceEqual requires -UiSmokeReplacement."
@@ -90,7 +96,11 @@ if ($UiSmoke) {
         & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --only-path "libs/ui/mhui.swf" --only-source $UiSmokeSource
     }
 } elseif ($UiOnly) {
-    & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf
+    if ($SlotAware) {
+        & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf --slot-aware
+    } else {
+        & $translator apply $ExtractedDir $catalogDir --out $patchedDir --only-swf
+    }
 } else {
     & $translator apply $ExtractedDir $catalogDir --out $patchedDir
 }
