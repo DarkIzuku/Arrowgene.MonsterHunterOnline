@@ -20,6 +20,7 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "diff-swf-strings" => DiffSwfStringsCommand(args.Skip(1).ToArray()),
     "scan-swf-ui-candidates" => ScanSwfUiCandidatesCommand(args.Skip(1).ToArray()),
     "scan-english-ui-tree" => ScanEnglishUiTreeCommand(args.Skip(1).ToArray()),
+    "scan-dat-ui-priority" => ScanDatUiPriorityCommand(args.Skip(1).ToArray()),
     "derive-safe-catalog" => TranslationPatch.DeriveSafeCatalogCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
@@ -82,6 +83,12 @@ Commands:
       patch tree. Supports SWF exact DoABC slots, DAT tables/XML/plain content
       and ordinary UTF text, and prints the files with the most candidates.
 
+  scan-dat-ui-priority <input-dir> [--output <csv>] [--only-path <path>]
+      Scans DAT TSV tables only and emits exact file/sheet/row/column slots from
+      fields that are likely player-facing (names, titles, descriptions,
+      messages, quest/NPC/item/skill text). Internal config/path/id fields are
+      excluded.
+
   derive-safe-catalog <swf-diff.csv> <spanish-catalog.csv|dir> [--out <csv>]
       Builds an English->Spanish catalog only from string-pool slots that the
       working English patch already changed safely. Structural mismatches and
@@ -107,6 +114,247 @@ static int UnknownCommand(string command)
     return ShowHelp();
 }
 
+
+static int ScanDatUiPriorityCommand(string[] args)
+{
+    if (args.Length < 1)
+    {
+        Console.Error.WriteLine(
+            "scan-dat-ui-priority requires <input-dir> [--output <csv>] [--only-path <path>].");
+        return 2;
+    }
+
+    string root = Path.GetFullPath(args[0]);
+    if (!Directory.Exists(root))
+    {
+        Console.Error.WriteLine($"Input directory does not exist: {root}");
+        return 2;
+    }
+
+    string output = Path.GetFullPath(
+        GetOption(args, "--output") ??
+        Path.Combine(Environment.CurrentDirectory, "dat-ui-priority.csv"));
+    string? onlyPath = GetOption(args, "--only-path");
+    if (!string.IsNullOrWhiteSpace(onlyPath))
+        onlyPath = onlyPath.Replace('\\', '/').TrimStart('/');
+
+    List<(string Path, string Sheet, int Row, int Col, string Header, string Source, string Priority, string Role, string Confidence, string Reason)> rows = [];
+    Dictionary<string, (int High, int Medium)> perFile = new(StringComparer.OrdinalIgnoreCase);
+
+    int datFiles = 0;
+    int tsvFiles = 0;
+    int cellsExamined = 0;
+    int skippedField = 0;
+    int rejectedValue = 0;
+    int failures = 0;
+
+    foreach (string file in Directory.EnumerateFiles(root, "*.dat", SearchOption.AllDirectories))
+    {
+        string relative = Path.GetRelativePath(root, file).Replace('\\', '/');
+        if (!string.IsNullOrWhiteSpace(onlyPath) &&
+            !relative.Equals(onlyPath, StringComparison.OrdinalIgnoreCase))
+            continue;
+
+        datFiles++;
+        try
+        {
+            byte[] bytes = File.ReadAllBytes(file);
+            DatFile dat = new();
+            dat.Open(bytes);
+            if (dat.ContentType != DatFile.DatContentType.TSV || dat.Sheets.Count == 0)
+                continue;
+
+            tsvFiles++;
+
+            foreach (TsvSheet sheet in dat.Sheets)
+            {
+                if (sheet.TableHead == null || sheet.Table == null)
+                    continue;
+
+                string sheetName = string.IsNullOrWhiteSpace(sheet.Name) ? "(unnamed)" : sheet.Name;
+                string[] headers = sheet.TableHead;
+
+                for (int r = 0; r < sheet.Table.Length; r++)
+                {
+                    string[] row = sheet.Table[r] ?? Array.Empty<string>();
+                    for (int c = 0; c < row.Length; c++)
+                    {
+                        cellsExamined++;
+                        string header = c < headers.Length ? (headers[c] ?? "") : $"col{c + 1}";
+                        (string Role, string Priority) field = ClassifyDatFieldStrict(header);
+                        if (field.Priority == "skip")
+                        {
+                            skippedField++;
+                            continue;
+                        }
+
+                        string raw = row[c] ?? "";
+                        string normalized = NormalizeCandidate(raw);
+                        if (normalized.Length == 0)
+                        {
+                            rejectedValue++;
+                            continue;
+                        }
+
+                        var cls = ClassifyUiCandidate(normalized);
+                        if (cls.Confidence == "reject")
+                        {
+                            rejectedValue++;
+                            continue;
+                        }
+
+                        // High-confidence DAT columns may legitimately contain short
+                        // single-word labels that the generic SWF heuristic calls weak.
+                        string confidence = cls.Confidence;
+                        if (field.Priority == "high" && confidence == "weak")
+                            confidence = "medium";
+
+                        rows.Add((
+                            relative,
+                            sheetName,
+                            r + 1,
+                            c + 1,
+                            header,
+                            raw,
+                            field.Priority,
+                            field.Role,
+                            confidence,
+                            cls.Reason));
+
+                        perFile.TryGetValue(relative, out var counts);
+                        counts = field.Priority == "high"
+                            ? (counts.High + 1, counts.Medium)
+                            : (counts.High, counts.Medium + 1);
+                        perFile[relative] = counts;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            failures++;
+            Console.Error.WriteLine($"[WARN] {relative}: {ex.Message}");
+        }
+    }
+
+    Directory.CreateDirectory(Path.GetDirectoryName(output)!);
+    using (StreamWriter writer = new(output, false, new UTF8Encoding(false)))
+    {
+        writer.WriteLine("path,sheet,row,col,header,source,translation,status,priority,field_role,confidence,reason,notes");
+        foreach (var row in rows
+                     .OrderBy(x => x.Path, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(x => x.Sheet, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(x => x.Row)
+                     .ThenBy(x => x.Col))
+        {
+            writer.WriteLine(
+                $"{CsvCell(row.Path)},{CsvCell(row.Sheet)},{row.Row},{row.Col}," +
+                $"{CsvCell(row.Header)},{CsvCell(row.Source)},,review,{row.Priority}," +
+                $"{CsvCell(row.Role)},{row.Confidence},{CsvCell(row.Reason)},exact_dat_cell");
+        }
+    }
+
+    Console.WriteLine($"Root:                 {root}");
+    Console.WriteLine($"DAT files examined:   {datFiles}");
+    Console.WriteLine($"TSV DAT files:        {tsvFiles}");
+    Console.WriteLine($"Cells examined:       {cellsExamined}");
+    Console.WriteLine($"Skipped config fields:{skippedField}");
+    Console.WriteLine($"Rejected values:      {rejectedValue}");
+    Console.WriteLine($"Priority candidates:  {rows.Count}");
+    Console.WriteLine($"  high:               {rows.Count(x => x.Priority == "high")}");
+    Console.WriteLine($"  medium:             {rows.Count(x => x.Priority == "medium")}");
+    Console.WriteLine($"Failures:             {failures}");
+    Console.WriteLine($"Output:               {output}");
+
+    Console.WriteLine();
+    Console.WriteLine("Top DAT files by player-facing priority cells:");
+    foreach (var item in perFile
+                 .Select(x => new { Path = x.Key, x.Value.High, x.Value.Medium, Total = x.Value.High + x.Value.Medium })
+                 .OrderByDescending(x => x.High)
+                 .ThenByDescending(x => x.Medium)
+                 .ThenByDescending(x => x.Total)
+                 .Take(40))
+    {
+        Console.WriteLine($"{item.High,6} high  {item.Medium,6} medium  {item.Path}");
+    }
+
+    return failures == 0 ? 0 : 5;
+}
+
+static (string Role, string Priority) ClassifyDatFieldStrict(string header)
+{
+    string h = (header ?? "").Trim();
+    if (h.Length == 0)
+        return ("unknown", "skip");
+
+    string lower = h.ToLowerInvariant();
+
+    string[] rejectTokens =
+    [
+        "id", "index", "key", "hash", "path", "file", "script", "class", "model",
+        "mesh", "material", "texture", "icon", "sound", "audio", "effect", "fx",
+        "resource", "resname", "var", "param", "flag", "typeid", "enum", "code",
+        "guid", "crc", "version", "offset", "address"
+    ];
+
+    // Exact display fields should win before generic reject tokens such as "id"
+    // inside words like "Title".
+    string[] highExact =
+    [
+        "name", "displayname", "showname", "title", "description", "desc",
+        "message", "text", "note", "completenote", "tip", "help",
+        "itemname", "skillname", "questname", "npcname", "monstername",
+        "levelname", "weaponname", "armorname", "buffname"
+    ];
+    if (highExact.Any(x => lower.Equals(x, StringComparison.OrdinalIgnoreCase)))
+    {
+        string role = lower.Contains("desc") || lower.Contains("message") || lower == "text" ||
+                      lower.Contains("note") || lower.Contains("help") || lower.Contains("tip")
+            ? "description-message"
+            : "name-title";
+        return (role, "high");
+    }
+
+    if (rejectTokens.Any(x =>
+            lower.Equals(x, StringComparison.OrdinalIgnoreCase) ||
+            lower.EndsWith(x, StringComparison.OrdinalIgnoreCase) ||
+            lower.StartsWith(x + "_", StringComparison.OrdinalIgnoreCase) ||
+            lower.EndsWith("_" + x, StringComparison.OrdinalIgnoreCase)))
+        return ("config", "skip");
+
+    string[] highContains =
+    [
+        "displayname", "showname", "itemname", "skillname", "questname", "npcname",
+        "monstername", "weaponname", "armorname", "buffname", "description",
+        "complete_note", "completenote", "message", "dialog", "dialogue"
+    ];
+    if (highContains.Any(x => lower.Contains(x, StringComparison.OrdinalIgnoreCase)))
+        return ("player-facing", "high");
+
+    string[] mediumTokens =
+    [
+        "label", "caption", "prompt", "tooltip", "hint", "reward", "condition",
+        "objective", "targetname", "groupname", "categoryname", "tabname",
+        "systemname", "content", "summary"
+    ];
+    if (mediumTokens.Any(x => lower.Contains(x, StringComparison.OrdinalIgnoreCase)))
+        return ("player-facing", "medium");
+
+    // Chinese field headers used by original tables.
+    string[] chineseHigh =
+    [
+        "名字", "名称", "物品名称", "配方名称", "怪物名称", "npc名称", "技能名称",
+        "任务名称", "标题", "说明", "描述", "备注", "文本", "消息", "对白", "对话", "内容"
+    ];
+    if (chineseHigh.Any(x => h.Contains(x, StringComparison.Ordinal)))
+        return ("player-facing", "high");
+
+    string[] chineseMedium = ["提示", "帮助", "奖励名称", "技能说明", "效果说明"];
+    if (chineseMedium.Any(x => h.Contains(x, StringComparison.Ordinal)))
+        return ("player-facing", "medium");
+
+    return ("unknown", "skip");
+}
 
 static int ScanEnglishUiTreeCommand(string[] args)
 {
