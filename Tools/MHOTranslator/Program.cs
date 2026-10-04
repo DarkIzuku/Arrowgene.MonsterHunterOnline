@@ -118,29 +118,34 @@ static int DiffSwfStringsCommand(string[] args)
 
     try
     {
-        List<List<string>> beforePools = ExtractDoAbcStringPools(File.ReadAllBytes(beforePath), beforePath);
-        List<List<string>> afterPools = ExtractDoAbcStringPools(File.ReadAllBytes(afterPath), afterPath);
+        List<(List<string> Strings, HashSet<int> Structural)> beforePools =
+            ExtractDoAbcStringDetails(File.ReadAllBytes(beforePath), beforePath);
+        List<(List<string> Strings, HashSet<int> Structural)> afterPools =
+            ExtractDoAbcStringDetails(File.ReadAllBytes(afterPath), afterPath);
 
         int tagCount = Math.Max(beforePools.Count, afterPools.Count);
         int changed = 0;
         int same = 0;
         int structuralMismatches = 0;
+        int literalCandidates = 0;
 
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         using StreamWriter writer = new(output, false, new UTF8Encoding(false));
-        writer.WriteLine("abc_tag,string_index,before,after,status,notes");
+        writer.WriteLine("abc_tag,string_index,before,after,before_structural,after_structural,status,notes");
 
         for (int tag = 0; tag < tagCount; tag++)
         {
             if (tag >= beforePools.Count || tag >= afterPools.Count)
             {
                 structuralMismatches++;
-                writer.WriteLine($"{tag},0,,,review,\"DoABC tag missing on one side\"");
+                writer.WriteLine($"{tag},0,,,true,true,review,\"DoABC tag missing on one side\"");
                 continue;
             }
 
-            List<string> a = beforePools[tag];
-            List<string> z = afterPools[tag];
+            List<string> a = beforePools[tag].Strings;
+            List<string> z = afterPools[tag].Strings;
+            HashSet<int> aStructural = beforePools[tag].Structural;
+            HashSet<int> zStructural = afterPools[tag].Structural;
             int count = Math.Max(a.Count, z.Count);
             if (a.Count != z.Count)
             {
@@ -158,6 +163,13 @@ static int DiffSwfStringsCommand(string[] args)
                 }
 
                 changed++;
+                bool beforeStructural = aStructural.Contains(i);
+                bool afterStructural = zStructural.Contains(i);
+                if (!beforeStructural && !afterStructural && a.Count == z.Count)
+                {
+                    literalCandidates++;
+                }
+
                 string status = string.IsNullOrEmpty(before) || string.IsNullOrEmpty(after)
                     ? "review"
                     : "english_patch_changed";
@@ -166,18 +178,22 @@ static int DiffSwfStringsCommand(string[] args)
                     : "pool_count_mismatch";
 
                 writer.WriteLine(
-                    $"{tag},{i},{CsvCell(before)},{CsvCell(after)},{status},{CsvCell(notes)}");
+                    $"{tag},{i},{CsvCell(before)},{CsvCell(after)}," +
+                    $"{beforeStructural.ToString().ToLowerInvariant()}," +
+                    $"{afterStructural.ToString().ToLowerInvariant()}," +
+                    $"{status},{CsvCell(notes)}");
             }
         }
 
-        Console.WriteLine($"Before:                {beforePath}");
-        Console.WriteLine($"After:                 {afterPath}");
-        Console.WriteLine($"DoABC tags before:     {beforePools.Count}");
-        Console.WriteLine($"DoABC tags after:      {afterPools.Count}");
-        Console.WriteLine($"Changed pool entries:  {changed}");
-        Console.WriteLine($"Unchanged pool entries:{same}");
-        Console.WriteLine($"Structural mismatches: {structuralMismatches}");
-        Console.WriteLine($"Output:                {output}");
+        Console.WriteLine($"Before:                  {beforePath}");
+        Console.WriteLine($"After:                   {afterPath}");
+        Console.WriteLine($"DoABC tags before:       {beforePools.Count}");
+        Console.WriteLine($"DoABC tags after:        {afterPools.Count}");
+        Console.WriteLine($"Changed pool entries:    {changed}");
+        Console.WriteLine($"Literal-safe candidates: {literalCandidates}");
+        Console.WriteLine($"Unchanged pool entries:  {same}");
+        Console.WriteLine($"Structural mismatches:   {structuralMismatches}");
+        Console.WriteLine($"Output:                  {output}");
 
         return structuralMismatches == 0 ? 0 : 5;
     }
@@ -188,10 +204,10 @@ static int DiffSwfStringsCommand(string[] args)
     }
 }
 
-static List<List<string>> ExtractDoAbcStringPools(byte[] bytes, string name)
+static List<(List<string> Strings, HashSet<int> Structural)> ExtractDoAbcStringDetails(byte[] bytes, string name)
 {
     SwfFile swf = SwfFile.Open(bytes, name);
-    List<List<string>> result = new();
+    List<(List<string>, HashSet<int>)> result = new();
 
     foreach (SwfTag tag in swf.Tags)
     {
@@ -226,25 +242,17 @@ static List<List<string>> ExtractDoAbcStringPools(byte[] bytes, string name)
         int p = 4;
 
         uint intCount = ReadAbcU30(abc, ref p);
-        for (uint i = 1; i < intCount; i++)
-        {
-            SkipAbcU32(abc, ref p);
-        }
+        for (uint i = 1; i < intCount; i++) SkipAbcU32(abc, ref p);
 
         uint uintCount = ReadAbcU30(abc, ref p);
-        for (uint i = 1; i < uintCount; i++)
-        {
-            SkipAbcU32(abc, ref p);
-        }
+        for (uint i = 1; i < uintCount; i++) SkipAbcU32(abc, ref p);
 
         uint doubleCount = ReadAbcU30(abc, ref p);
         if (doubleCount > 0)
         {
             int bytesToSkip = checked((int)((doubleCount - 1) * 8));
             if (bytesToSkip > abc.Length - p)
-            {
                 throw new InvalidDataException("ABC double pool exceeds DoABC tag.");
-            }
             p += bytesToSkip;
         }
 
@@ -255,9 +263,7 @@ static List<List<string>> ExtractDoAbcStringPools(byte[] bytes, string name)
             uint length = ReadAbcU30(abc, ref p);
             int len = checked((int)length);
             if (len > abc.Length - p)
-            {
                 throw new InvalidDataException("ABC string exceeds DoABC tag.");
-            }
 
             ReadOnlySpan<byte> raw = abc.Slice(p, len);
             p += len;
@@ -271,10 +277,205 @@ static List<List<string>> ExtractDoAbcStringPools(byte[] bytes, string name)
             }
         }
 
-        result.Add(strings);
+        HashSet<int> structural = new();
+        void Mark(uint index)
+        {
+            if (index > 0 && index < stringCount)
+                structural.Add(checked((int)index));
+        }
+
+        uint namespaceCount = ReadAbcU30(abc, ref p);
+        for (uint i = 1; i < namespaceCount; i++)
+        {
+            if (p >= abc.Length) throw new InvalidDataException("ABC namespace pool truncated.");
+            p++; // kind
+            Mark(ReadAbcU30(abc, ref p));
+        }
+
+        uint nsSetCount = ReadAbcU30(abc, ref p);
+        for (uint i = 1; i < nsSetCount; i++)
+        {
+            uint count = ReadAbcU30(abc, ref p);
+            for (uint j = 0; j < count; j++) _ = ReadAbcU30(abc, ref p);
+        }
+
+        uint multinameCount = ReadAbcU30(abc, ref p);
+        for (uint i = 1; i < multinameCount; i++)
+        {
+            if (p >= abc.Length) throw new InvalidDataException("ABC multiname pool truncated.");
+            byte kind = abc[p++];
+            switch (kind)
+            {
+                case 0x07:
+                case 0x0D:
+                    _ = ReadAbcU30(abc, ref p); // ns
+                    Mark(ReadAbcU30(abc, ref p)); // name
+                    break;
+                case 0x0F:
+                case 0x10:
+                    Mark(ReadAbcU30(abc, ref p));
+                    break;
+                case 0x11:
+                case 0x12:
+                    break;
+                case 0x09:
+                case 0x0E:
+                    Mark(ReadAbcU30(abc, ref p));
+                    _ = ReadAbcU30(abc, ref p); // ns set
+                    break;
+                case 0x1B:
+                case 0x1C:
+                    _ = ReadAbcU30(abc, ref p);
+                    break;
+                case 0x1D:
+                    _ = ReadAbcU30(abc, ref p); // qname
+                    uint paramCount = ReadAbcU30(abc, ref p);
+                    for (uint j = 0; j < paramCount; j++) _ = ReadAbcU30(abc, ref p);
+                    break;
+                default:
+                    throw new InvalidDataException($"Unsupported ABC multiname kind 0x{kind:X2}.");
+            }
+        }
+
+        uint methodCount = ReadAbcU30(abc, ref p);
+        for (uint i = 0; i < methodCount; i++)
+        {
+            uint paramCount = ReadAbcU30(abc, ref p);
+            _ = ReadAbcU30(abc, ref p); // return type
+            for (uint j = 0; j < paramCount; j++) _ = ReadAbcU30(abc, ref p);
+            Mark(ReadAbcU30(abc, ref p)); // method name
+            if (p >= abc.Length) throw new InvalidDataException("ABC method_info truncated.");
+            byte flags = abc[p++];
+
+            if ((flags & 0x08) != 0)
+            {
+                uint optionCount = ReadAbcU30(abc, ref p);
+                for (uint j = 0; j < optionCount; j++)
+                {
+                    _ = ReadAbcU30(abc, ref p);
+                    if (p >= abc.Length) throw new InvalidDataException("ABC option_info truncated.");
+                    p++;
+                }
+            }
+
+            if ((flags & 0x80) != 0)
+            {
+                for (uint j = 0; j < paramCount; j++) Mark(ReadAbcU30(abc, ref p));
+            }
+        }
+
+        uint metadataCount = ReadAbcU30(abc, ref p);
+        for (uint i = 0; i < metadataCount; i++)
+        {
+            Mark(ReadAbcU30(abc, ref p));
+            uint itemCount = ReadAbcU30(abc, ref p);
+            for (uint j = 0; j < itemCount; j++) Mark(ReadAbcU30(abc, ref p));
+            for (uint j = 0; j < itemCount; j++) Mark(ReadAbcU30(abc, ref p));
+        }
+
+        uint classCount = ReadAbcU30(abc, ref p);
+        for (uint i = 0; i < classCount; i++)
+        {
+            _ = ReadAbcU30(abc, ref p); // name
+            _ = ReadAbcU30(abc, ref p); // super
+            if (p >= abc.Length) throw new InvalidDataException("ABC instance_info truncated.");
+            byte flags = abc[p++];
+            if ((flags & 0x08) != 0) _ = ReadAbcU30(abc, ref p);
+            uint interfaceCount = ReadAbcU30(abc, ref p);
+            for (uint j = 0; j < interfaceCount; j++) _ = ReadAbcU30(abc, ref p);
+            _ = ReadAbcU30(abc, ref p); // iinit
+            SkipAbcTraits(abc, ref p);
+        }
+
+        for (uint i = 0; i < classCount; i++)
+        {
+            _ = ReadAbcU30(abc, ref p); // cinit
+            SkipAbcTraits(abc, ref p);
+        }
+
+        uint scriptCount = ReadAbcU30(abc, ref p);
+        for (uint i = 0; i < scriptCount; i++)
+        {
+            _ = ReadAbcU30(abc, ref p);
+            SkipAbcTraits(abc, ref p);
+        }
+
+        uint bodyCount = ReadAbcU30(abc, ref p);
+        for (uint i = 0; i < bodyCount; i++)
+        {
+            _ = ReadAbcU30(abc, ref p); // method
+            _ = ReadAbcU30(abc, ref p); // max_stack
+            _ = ReadAbcU30(abc, ref p); // local_count
+            _ = ReadAbcU30(abc, ref p); // init_scope_depth
+            _ = ReadAbcU30(abc, ref p); // max_scope_depth
+            int codeLength = checked((int)ReadAbcU30(abc, ref p));
+            if (codeLength > abc.Length - p)
+                throw new InvalidDataException("ABC method body code exceeds tag.");
+            p += codeLength;
+
+            uint exceptionCount = ReadAbcU30(abc, ref p);
+            for (uint j = 0; j < exceptionCount; j++)
+            {
+                _ = ReadAbcU30(abc, ref p);
+                _ = ReadAbcU30(abc, ref p);
+                _ = ReadAbcU30(abc, ref p);
+                _ = ReadAbcU30(abc, ref p);
+                _ = ReadAbcU30(abc, ref p);
+            }
+
+            SkipAbcTraits(abc, ref p);
+        }
+
+        result.Add((strings, structural));
     }
 
     return result;
+}
+
+static void SkipAbcTraits(ReadOnlySpan<byte> abc, ref int p)
+{
+    uint traitCount = ReadAbcU30(abc, ref p);
+    for (uint i = 0; i < traitCount; i++)
+    {
+        _ = ReadAbcU30(abc, ref p); // trait name multiname
+        if (p >= abc.Length) throw new InvalidDataException("ABC trait truncated.");
+        byte kindAttr = abc[p++];
+        int kind = kindAttr & 0x0F;
+
+        switch (kind)
+        {
+            case 0:
+            case 6:
+                _ = ReadAbcU30(abc, ref p); // slot id
+                _ = ReadAbcU30(abc, ref p); // type name
+                uint vindex = ReadAbcU30(abc, ref p);
+                if (vindex != 0)
+                {
+                    if (p >= abc.Length) throw new InvalidDataException("ABC trait value kind truncated.");
+                    p++;
+                }
+                break;
+            case 1:
+            case 2:
+            case 3:
+                _ = ReadAbcU30(abc, ref p);
+                _ = ReadAbcU30(abc, ref p);
+                break;
+            case 4:
+            case 5:
+                _ = ReadAbcU30(abc, ref p);
+                _ = ReadAbcU30(abc, ref p);
+                break;
+            default:
+                throw new InvalidDataException($"Unsupported ABC trait kind {kind}.");
+        }
+
+        if ((kindAttr & 0x40) != 0)
+        {
+            uint metadataCount = ReadAbcU30(abc, ref p);
+            for (uint j = 0; j < metadataCount; j++) _ = ReadAbcU30(abc, ref p);
+        }
+    }
 }
 
 static uint ReadAbcU30(ReadOnlySpan<byte> data, ref int offset)
@@ -283,16 +484,12 @@ static uint ReadAbcU30(ReadOnlySpan<byte> data, ref int offset)
     for (int i = 0; i < 5; i++)
     {
         if (offset >= data.Length)
-        {
             throw new InvalidDataException("Unexpected end of ABC U30.");
-        }
 
         byte b = data[offset++];
         value |= (uint)(b & 0x7F) << (7 * i);
         if ((b & 0x80) == 0)
-        {
             return value & 0x3FFFFFFF;
-        }
     }
 
     throw new InvalidDataException("Invalid ABC U30.");
@@ -303,15 +500,11 @@ static void SkipAbcU32(ReadOnlySpan<byte> data, ref int offset)
     for (int i = 0; i < 5; i++)
     {
         if (offset >= data.Length)
-        {
             throw new InvalidDataException("Unexpected end of ABC U32.");
-        }
 
         byte b = data[offset++];
         if ((b & 0x80) == 0)
-        {
             return;
-        }
     }
 
     throw new InvalidDataException("Invalid ABC U32.");
@@ -320,9 +513,7 @@ static void SkipAbcU32(ReadOnlySpan<byte> data, ref int offset)
 static string CsvCell(string value)
 {
     if (value.Contains('"') || value.Contains(',') || value.Contains('\r') || value.Contains('\n'))
-    {
         return "\"" + value.Replace("\"", "\"\"") + "\"";
-    }
     return value;
 }
 
