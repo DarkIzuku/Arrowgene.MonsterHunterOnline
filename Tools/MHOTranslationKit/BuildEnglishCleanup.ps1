@@ -40,7 +40,7 @@ Write-Host "Output IFS: $OutputIfs"
 Write-Host ""
 
 Write-Host "[1/2] Applying conservative English cleanup..."
-& $translator apply-english-cleanup $ExtractedDir $CatalogPath --out $patchedDir
+& $translator apply-english-cleanup $ExtractedDir $CatalogPath --out $patchedDir --quiet
 if ($LASTEXITCODE -ne 0) {
     throw "English cleanup failed with exit code $LASTEXITCODE."
 }

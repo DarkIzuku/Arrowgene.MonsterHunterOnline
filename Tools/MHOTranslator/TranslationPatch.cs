@@ -9,6 +9,7 @@ internal static class TranslationPatch
 {
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly UTF8Encoding Utf8NoBom = new(false);
+    private static bool EnglishCleanupQuiet;
 
     private sealed record SwfSlotTranslation(
         int AbcTag,
@@ -43,6 +44,7 @@ internal static class TranslationPatch
             GetOption(args, "--out") ??
             Path.Combine(Environment.CurrentDirectory, "mho-english-cleanup"));
         string? onlyPath = GetOption(args, "--only-path");
+        bool quiet = args.Any(x => x.Equals("--quiet", StringComparison.OrdinalIgnoreCase));
         if (!string.IsNullOrWhiteSpace(onlyPath))
             onlyPath = onlyPath.Replace('\\', '/').TrimStart('/');
 
@@ -77,6 +79,7 @@ internal static class TranslationPatch
         Console.WriteLine("DAT policy:     exact UI cells, identical UTF-8 byte length");
 
         Directory.CreateDirectory(outputRoot);
+        EnglishCleanupQuiet = quiet;
 
         int examined = 0;
         int modifiedFiles = 0;
@@ -154,8 +157,11 @@ internal static class TranslationPatch
                 File.WriteAllBytes(target, patched);
 
                 modifiedFiles++;
-                Console.WriteLine(
-                    $"[PATCH] {relative} ({fileReplacements} safe English replacements)");
+                if (!quiet)
+                {
+                    Console.WriteLine(
+                        $"[PATCH] {relative} ({fileReplacements} safe English replacements)");
+                }
             }
             catch (Exception ex)
             {
@@ -1404,10 +1410,13 @@ internal static class TranslationPatch
                     if (translatedBytes > sourceBytes)
                     {
                         skippedTooLong++;
-                        Console.WriteLine(
-                            $"[DAT-SKIP-LENGTH] {relativePath} sheet={EscapeForLog(sheetName)} " +
-                            $"row={r + 1} col={c + 1} sourceBytes={sourceBytes} englishBytes={translatedBytes} " +
-                            $"source={EscapeForLog(trimmed)} -> {EscapeForLog(translation)}");
+                        if (!EnglishCleanupQuiet)
+                        {
+                            Console.WriteLine(
+                                $"[DAT-SKIP-LENGTH] {relativePath} sheet={EscapeForLog(sheetName)} " +
+                                $"row={r + 1} col={c + 1} sourceBytes={sourceBytes} englishBytes={translatedBytes} " +
+                                $"source={EscapeForLog(trimmed)} -> {EscapeForLog(translation)}");
+                        }
                         continue;
                     }
 
@@ -1998,10 +2007,13 @@ internal static class TranslationPatch
 
                 cells[index] = slot.Translation;
                 applied.Add((slot.Sheet, slot.Row, slot.Col));
-                Console.WriteLine(
-                    $"[DAT-SLOT] {relativePath} sheet={EscapeForLog(slot.Sheet)} " +
-                    $"row={slot.Row} col={slot.Col} header={EscapeForLog(slot.Header)} " +
-                    $"source={EscapeForLog(slot.Source)} -> {EscapeForLog(slot.Translation)}");
+                if (!EnglishCleanupQuiet)
+                {
+                    Console.WriteLine(
+                        $"[DAT-SLOT] {relativePath} sheet={EscapeForLog(slot.Sheet)} " +
+                        $"row={slot.Row} col={slot.Col} header={EscapeForLog(slot.Header)} " +
+                        $"source={EscapeForLog(slot.Source)} -> {EscapeForLog(slot.Translation)}");
+                }
             }
 
             return string.Join('\t', cells);
@@ -2280,9 +2292,12 @@ internal static class TranslationPatch
 
                 output = Utf8NoBom.GetBytes(mapping.Translation);
                 replacements++;
-                Console.WriteLine(
-                    $"[SWF-SLOT] abc={doAbcOrdinal} index={i} " +
-                    $"source={EscapeForLog(mapping.Source)} -> {EscapeForLog(mapping.Translation)}");
+                if (!EnglishCleanupQuiet)
+                {
+                    Console.WriteLine(
+                        $"[SWF-SLOT] abc={doAbcOrdinal} index={i} " +
+                        $"source={EscapeForLog(mapping.Source)} -> {EscapeForLog(mapping.Translation)}");
+                }
             }
 
             strings.Add(output);
