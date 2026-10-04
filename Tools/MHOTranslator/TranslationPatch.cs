@@ -657,6 +657,181 @@ internal static class TranslationPatch
         }
     }
 
+
+    public static int DeriveSafeCatalogCommand(string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine(
+                "derive-safe-catalog requires <swf-diff.csv> <spanish-catalog.csv|dir> [--out <csv>].");
+            return 2;
+        }
+
+        string diffPath = Path.GetFullPath(args[0]);
+        string spanishCatalogPath = Path.GetFullPath(args[1]);
+        string outputPath = Path.GetFullPath(
+            GetOption(args, "--out") ??
+            Path.Combine(Environment.CurrentDirectory, "safe-english-to-spanish.csv"));
+
+        if (!File.Exists(diffPath))
+        {
+            Console.Error.WriteLine($"SWF diff does not exist: {diffPath}");
+            return 2;
+        }
+
+        if (!File.Exists(spanishCatalogPath) && !Directory.Exists(spanishCatalogPath))
+        {
+            Console.Error.WriteLine($"Spanish catalog does not exist: {spanishCatalogPath}");
+            return 2;
+        }
+
+        try
+        {
+            Dictionary<string, string> zhToEs = LoadTranslations(spanishCatalogPath);
+            List<string[]> rows = ParseCsv(File.ReadAllText(diffPath));
+            if (rows.Count == 0)
+            {
+                throw new InvalidDataException("SWF diff CSV is empty.");
+            }
+
+            string[] header = rows[0];
+            int tagCol = FindColumn(header, "abc_tag");
+            int indexCol = FindColumn(header, "string_index");
+            int beforeCol = FindColumn(header, "before");
+            int afterCol = FindColumn(header, "after");
+            int statusCol = FindColumn(header, "status");
+            int notesCol = FindColumn(header, "notes");
+
+            if (beforeCol < 0 || afterCol < 0)
+            {
+                throw new InvalidDataException("SWF diff CSV must contain before and after columns.");
+            }
+
+            Dictionary<string, (string Spanish, string Chinese, string Tag, string Index)> safe =
+                new(StringComparer.Ordinal);
+            HashSet<string> conflicts = new(StringComparer.Ordinal);
+
+            int examined = 0;
+            int samePoolCandidates = 0;
+            int matchedSpanish = 0;
+            int skippedStructural = 0;
+            int skippedNoSpanish = 0;
+            int skippedEmpty = 0;
+            int duplicateSame = 0;
+
+            for (int i = 1; i < rows.Count; i++)
+            {
+                string[] row = rows[i];
+                examined++;
+
+                string before = beforeCol < row.Length ? row[beforeCol] : string.Empty;
+                string after = afterCol < row.Length ? row[afterCol] : string.Empty;
+                string status = statusCol >= 0 && statusCol < row.Length ? row[statusCol] : string.Empty;
+                string notes = notesCol >= 0 && notesCol < row.Length ? row[notesCol] : string.Empty;
+
+                if (!status.Equals("english_patch_changed", StringComparison.OrdinalIgnoreCase) ||
+                    !notes.Equals("same_pool_index", StringComparison.OrdinalIgnoreCase))
+                {
+                    skippedStructural++;
+                    continue;
+                }
+
+                samePoolCandidates++;
+
+                if (string.IsNullOrEmpty(before) || string.IsNullOrEmpty(after) || before == after)
+                {
+                    skippedEmpty++;
+                    continue;
+                }
+
+                if (!zhToEs.TryGetValue(before, out string? spanish) || string.IsNullOrEmpty(spanish))
+                {
+                    skippedNoSpanish++;
+                    continue;
+                }
+
+                matchedSpanish++;
+
+                string tag = tagCol >= 0 && tagCol < row.Length ? row[tagCol] : string.Empty;
+                string index = indexCol >= 0 && indexCol < row.Length ? row[indexCol] : string.Empty;
+
+                if (conflicts.Contains(after))
+                {
+                    continue;
+                }
+
+                if (safe.TryGetValue(after, out var existing))
+                {
+                    if (!string.Equals(existing.Spanish, spanish, StringComparison.Ordinal))
+                    {
+                        conflicts.Add(after);
+                        safe.Remove(after);
+                    }
+                    else
+                    {
+                        duplicateSame++;
+                    }
+
+                    continue;
+                }
+
+                safe[after] = (spanish, before, tag, index);
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(outputPath)!);
+            using StreamWriter writer = new(outputPath, false, Utf8NoBom);
+            writer.WriteLine("source,translation,status,zh_source,abc_tag,string_index,notes");
+
+            foreach ((string english, var value) in safe.OrderBy(x => x.Key, StringComparer.Ordinal))
+            {
+                writer.WriteLine(
+                    $"{CsvEscape(english)},{CsvEscape(value.Spanish)},translate," +
+                    $"{CsvEscape(value.Chinese)},{CsvEscape(value.Tag)},{CsvEscape(value.Index)}," +
+                    $"english_patch_safe_slot");
+            }
+
+            Console.WriteLine($"Diff:                  {diffPath}");
+            Console.WriteLine($"Spanish catalog:       {spanishCatalogPath}");
+            Console.WriteLine($"Diff rows examined:    {examined}");
+            Console.WriteLine($"Safe-slot candidates:  {samePoolCandidates}");
+            Console.WriteLine($"Matched Spanish rows:  {matchedSpanish}");
+            Console.WriteLine($"Safe unique mappings:  {safe.Count}");
+            Console.WriteLine($"Duplicate same mapping:{duplicateSame}");
+            Console.WriteLine($"Conflicting mappings:  {conflicts.Count}");
+            Console.WriteLine($"Skipped structural:    {skippedStructural}");
+            Console.WriteLine($"Skipped no Spanish:    {skippedNoSpanish}");
+            Console.WriteLine($"Skipped empty:         {skippedEmpty}");
+            Console.WriteLine($"Output:                {outputPath}");
+
+            if (conflicts.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine("Excluded ambiguous English sources:");
+                foreach (string conflict in conflicts.OrderBy(x => x, StringComparer.Ordinal).Take(50))
+                {
+                    Console.WriteLine($"  {EscapeForLog(conflict)}");
+                }
+            }
+
+            return safe.Count > 0 ? 0 : 4;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"derive-safe-catalog failed: {ex}");
+            return 7;
+        }
+    }
+
+    private static string CsvEscape(string value)
+    {
+        if (value.Contains('"') || value.Contains(',') || value.Contains('\r') || value.Contains('\n'))
+        {
+            return "\"" + value.Replace("\"", "\"\"") + "\"";
+        }
+
+        return value;
+    }
+
     private static Dictionary<string, string> LoadTranslations(string path)
     {
         List<string> catalogs = File.Exists(path)

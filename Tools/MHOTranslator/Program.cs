@@ -18,6 +18,7 @@ return args.Length == 0 ? ShowHelp() : args[0].ToLowerInvariant() switch
     "inspect-entry" => InspectEntryCommand(args.Skip(1).ToArray()),
     "trace-path" => TracePathCommand(args.Skip(1).ToArray()),
     "diff-swf-strings" => DiffSwfStringsCommand(args.Skip(1).ToArray()),
+    "derive-safe-catalog" => TranslationPatch.DeriveSafeCatalogCommand(args.Skip(1).ToArray()),
     "compare" => CompareCommand(args.Skip(1).ToArray()),
     "help" or "--help" or "-h" => ShowHelp(),
     _ => UnknownCommand(args[0])
@@ -68,6 +69,11 @@ Commands:
       Compares DoABC string-pool entries by tag ordinal and pool index.
       Intended to discover exactly which strings the working English patch
       changed relative to the original Chinese SWF.
+
+  derive-safe-catalog <swf-diff.csv> <spanish-catalog.csv|dir> [--out <csv>]
+      Builds an English->Spanish catalog only from string-pool slots that the
+      working English patch already changed safely. Structural mismatches and
+      ambiguous/conflicting mappings are excluded.
 
   compare <original-dir> <patched-dir> [--output <csv>]
       Compares two extracted trees and reports which files the existing

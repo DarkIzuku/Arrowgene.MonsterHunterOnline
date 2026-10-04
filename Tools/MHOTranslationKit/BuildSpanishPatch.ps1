@@ -9,6 +9,8 @@ param(
 
     [string]$WorkDir = "",
 
+    [string]$CatalogPath = "",
+
     [switch]$UiOnly,
 
     [switch]$UiSmoke,
@@ -24,10 +26,14 @@ $ErrorActionPreference = "Stop"
 
 $kit = Split-Path -Parent $MyInvocation.MyCommand.Path
 $translator = Join-Path $kit "MHOTranslator.exe"
-$catalogDir = Join-Path $kit "Translation\es-ES"
-if (-not (Test-Path $catalogDir)) {
-    # Backward compatibility with kits produced before the canonical Translation\es-ES layout.
-    $catalogDir = Join-Path $kit "es-ES"
+if ([string]::IsNullOrWhiteSpace($CatalogPath)) {
+    $catalogDir = Join-Path $kit "Translation\es-ES"
+    if (-not (Test-Path $catalogDir)) {
+        # Backward compatibility with kits produced before the canonical Translation\es-ES layout.
+        $catalogDir = Join-Path $kit "es-ES"
+    }
+} else {
+    $catalogDir = [System.IO.Path]::GetFullPath($CatalogPath)
 }
 
 if (-not (Test-Path $translator)) {
